@@ -67,9 +67,10 @@ makes PDF libraries big. Android's own `PdfRenderer` hands out pixels and
 nothing else. The vision path also wins outright on the case that defeats text
 extraction: a scanned or photographed document has no text layer at all.
 
-Five pages maximum, roughly 250 tokens each, rendered at 1536 px because body
-copy at 1024 px stops being legible. The page count is shown before you send, so
-a long file is never quietly cut.
+The page limit is computed rather than fixed: half the context window divided by
+what one page costs, which is the **image detail** setting below. At the stock
+settings that is seven pages; at maximum detail on a 4096 window it is one. The
+count is shown before you send, so a long file is never quietly cut.
 
 Tap a page thumbnail to see the render full screen, or a document chip to read
 the extracted text. Both answer the same question: when the answer misses
@@ -78,6 +79,33 @@ something that is plainly in the file, was that the model or the extraction?
 The old binary `.doc` / `.xls` / `.ppt` are refused by name, with the fix - they
 are OLE compound files and reading them needs a library that costs more than the
 case is worth.
+
+## Image detail, or why a photo of text comes back garbled
+
+The setting that matters most for reading anything, and the least obvious one.
+
+`clip` scales every image down until it fits a token budget, so **that budget is
+a resolution limit**. llama.cpp caps Gemma 4 at 280 tokens per image, which puts
+a photographed A4 page at roughly 0.6 MP - about 950 px tall. Body text at 10pt
+lands around 14 px tall there, which is where a model stops reading words and
+starts reporting that "the text is fragmented".
+
+Downscaling less on the app's side does nothing about this: clip resizes to its
+budget regardless of what it is handed. The only lever is the budget itself, and
+the settings sheet exposes it:
+
+| Detail | Tokens/image | Roughly |
+|---|---|---|
+| Standard | 280 | 0.6 MP - scenes, objects, screenshots |
+| High | 600 | 1.4 MP - a photographed page |
+| Maximum | 1120 | 2.6 MP - small print, wants 8192 context |
+
+It comes out of the same window as the conversation, so it is a real trade: two
+images at High cost more than a quarter of a 4096-token window. The projector is
+re-initialised when this changes, which takes a second or two.
+
+For text you control, the document path is strictly better - exact characters at
+a quarter of the tokens.
 
 ## The two settings
 
@@ -273,9 +301,16 @@ Notes worth knowing before changing anything:
   with a 12 s prefill. `i8mm` would give more but is armv8.6 and would crash
   pre-2021 devices, so it needs runtime dispatch first.
 - **`buildConfig` stays off.** Enabling it generates `BuildConfig.java`, which
-  forces javac to run, which trips AGP 8.1.4's `JdkImageTransform` under the
+  forces javac to run, which tripped AGP 8.1.4's `JdkImageTransform` under the
   JDK 21 bundled with Android Studio. The version string is read from
-  `PackageManager` instead.
+  `PackageManager` instead. (The AGP 8.5.2 upgrade may have fixed the
+  underlying problem; nobody has re-tested it.)
+- **16 KB page size needs AGP 8.5.1 or newer**, not just a recent NDK. NDK r27
+  already emits 16 KB-aligned `LOAD` segments, so the libraries were fine - but
+  AGP 8.1.4 zipaligns APK entries to 4 KB, and since `extractNativeLibs` is
+  false by default the loader maps the library straight out of the APK, where
+  it has to start on a 16 KB boundary. Check with
+  `zipalign -c -P 16 -v 4 app-debug.apk`.
 - **The model has no clock.** Without being told the date it treats "now" as
   wherever its training data ended, and calls a 2026 event upcoming with
   complete confidence. No fact-checking prompt catches this, because the model

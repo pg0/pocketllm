@@ -278,7 +278,8 @@ JNI_FN(nativeLoadModel)(JNIEnv * env, jobject, jstring jpath,
 }
 
 JNIEXPORT jboolean JNICALL
-JNI_FN(nativeLoadProjector)(JNIEnv * env, jobject, jlong handle, jstring jpath, jboolean use_gpu) {
+JNI_FN(nativeLoadProjector)(JNIEnv * env, jobject, jlong handle, jstring jpath, jboolean use_gpu,
+                            jint image_max_tokens) {
     auto * s = reinterpret_cast<pll_session *>(handle);
     if (s == nullptr) return JNI_FALSE;
 
@@ -294,6 +295,19 @@ JNI_FN(nativeLoadProjector)(JNIEnv * env, jobject, jlong handle, jstring jpath, 
     p.print_timings = false;
     p.n_threads     = 4;
     p.media_marker  = mtmd_default_marker();
+
+    // How much of an image the model actually gets to see.
+    //
+    // clip resizes every image down to image_max_tokens * patch_area pixels,
+    // and for Gemma 4 llama.cpp caps that at 280 tokens - a photographed A4
+    // page arrives around 0.6 MP, which is where body text stops being
+    // legible. Raising it is the only lever that helps; downscaling less on
+    // our side does nothing, because clip resizes to this budget regardless.
+    //
+    // -1 keeps the model's own default.
+    if (image_max_tokens > 0) {
+        p.image_max_tokens = image_max_tokens;
+    }
 
     s->mctx = mtmd_init_from_file(path.c_str(), s->model, p);
     if (s->mctx == nullptr) {

@@ -18,8 +18,8 @@ android {
         targetSdk = 34
         // Versioning rule: every change I make bumps the patch (+0.0.1).
         // Minor bumps (+0.1.0) happen only when Patrick calls it.
-        versionCode = 13
-        versionName = "0.2.1"
+        versionCode = 14
+        versionName = "0.3.0"
 
         ndk {
             // Every phone that can hold a 3 GB model in RAM is arm64. Shipping

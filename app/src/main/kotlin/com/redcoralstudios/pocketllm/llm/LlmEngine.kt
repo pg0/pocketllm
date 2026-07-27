@@ -66,6 +66,9 @@ class LlmEngine(private val store: ModelStore) {
     private var loadedSpec: ModelSpec? = null
     private var projectorLoaded = false
 
+    /** The image token budget the resident projector was initialised with. */
+    private var loadedImageTokens = -1
+
     /**
      * System prompt already baked into the current conversation. Gemma has no
      * system role, so the text rides on the first user turn; when the dials move
@@ -141,19 +144,23 @@ class LlmEngine(private val store: ModelStore) {
      * Deferred on purpose: the projector costs close to a gigabyte of RAM, and
      * a text-only conversation never needs it.
      */
-    suspend fun ensureProjector(useGpu: Boolean): Boolean = lock.withLock {
+    suspend fun ensureProjector(useGpu: Boolean, imageMaxTokens: Int = -1): Boolean =
+        lock.withLock {
         val spec = loadedSpec ?: return@withLock false
         val projector = spec.projector ?: return@withLock false
         if (handle == 0L) return@withLock false
-        if (projectorLoaded) return@withLock true
+        // The token budget is fixed when the encoder is initialised, so
+        // changing it means loading the projector again.
+        if (projectorLoaded && imageMaxTokens == loadedImageTokens) return@withLock true
         if (!store.isComplete(projector)) return@withLock false
 
         withContext(worker) {
             val ok = LlamaBridge.nativeLoadProjector(
-                handle, store.fileFor(projector).absolutePath, useGpu,
+                handle, store.fileFor(projector).absolutePath, useGpu, imageMaxTokens,
             )
             if (ok) {
                 projectorLoaded = true
+                loadedImageTokens = imageMaxTokens
                 val current = _state.value
                 if (current is EngineState.Ready) {
                     _state.value = current.copy(

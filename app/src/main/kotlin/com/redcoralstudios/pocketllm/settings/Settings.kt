@@ -15,6 +15,48 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "pocketllm")
 
+/**
+ * How much of an image reaches the model, in tokens.
+ *
+ * This is a resolution setting wearing a token budget's clothes. clip scales
+ * every image down until it fits the budget, so the number decides how large
+ * the picture is when the encoder sees it - a photographed A4 page at the
+ * stock 280 tokens arrives at roughly 0.6 MP, which is where 10pt body text
+ * stops being reliably legible and starts coming back as "the text is
+ * fragmented".
+ *
+ * The cost is paid out of the same context window as the conversation, so it
+ * is a real trade rather than a free win: at [HIGH] two images cost more than
+ * a quarter of a 4096-token window.
+ */
+object ImageDetail {
+    /** llama.cpp's own cap for Gemma 4. Fine for scenes, marginal for text. */
+    const val STANDARD = 280
+
+    /** Roughly double the pixels. Enough for a photographed page. */
+    const val HIGH = 600
+
+    /** Four times the pixels of standard. Wants a context of 8192 or more. */
+    const val MAXIMUM = 1120
+
+    fun label(tokens: Int): String = when {
+        tokens >= MAXIMUM -> "Maximum"
+        tokens >= HIGH -> "High"
+        else -> "Standard"
+    }
+
+    /**
+     * How many PDF pages fit alongside a question. The page budget has to move
+     * with the per-image cost or a five-page PDF at maximum detail would fill
+     * a 4096-token window on its own.
+     */
+    fun pagesFor(tokens: Int, contextSize: Int): Int {
+        // Half the window for pages, the rest for the prompt and the answer.
+        val budget = contextSize / 2
+        return (budget / tokens).coerceIn(1, 8)
+    }
+}
+
 data class AppSettings(
     val modelId: String,
     val creativity: Int,
@@ -36,6 +78,12 @@ data class AppSettings(
      */
     val wikipediaGrounding: Boolean,
     /**
+     * How many tokens one image may occupy, which is the same thing as how much
+     * of it the model gets to see: clip resizes every picture down to this
+     * budget, so it is the resolution ceiling. See [ImageDetail].
+     */
+    val imageTokens: Int,
+    /**
      * User-written system prompt. Blank means "generate it from the dials".
      * When set, this text is used verbatim and the dials affect only sampling.
      */
@@ -56,6 +104,7 @@ data class AppSettings(
             // spends context on an article that may have nothing to do with
             // the question.
             wikipediaGrounding = false,
+            imageTokens = ImageDetail.STANDARD,
             systemPrompt = "",
         )
     }
@@ -78,6 +127,7 @@ class SettingsRepository(private val context: Context) {
             projectorOnGpu = p[KEY_PROJECTOR_GPU] ?: AppSettings.DEFAULT.projectorOnGpu,
             webAccess = p[KEY_WEB_ACCESS] ?: AppSettings.DEFAULT.webAccess,
             wikipediaGrounding = p[KEY_WIKIPEDIA] ?: AppSettings.DEFAULT.wikipediaGrounding,
+            imageTokens = p[KEY_IMAGE_TOKENS] ?: AppSettings.DEFAULT.imageTokens,
             systemPrompt = p[KEY_SYSTEM_PROMPT] ?: AppSettings.DEFAULT.systemPrompt,
         )
     }
@@ -91,6 +141,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setProjectorOnGpu(v: Boolean) = edit { it[KEY_PROJECTOR_GPU] = v }
     suspend fun setWebAccess(v: Boolean) = edit { it[KEY_WEB_ACCESS] = v }
     suspend fun setWikipediaGrounding(v: Boolean) = edit { it[KEY_WIKIPEDIA] = v }
+    suspend fun setImageTokens(v: Int) = edit { it[KEY_IMAGE_TOKENS] = v.coerceIn(40, 2048) }
     suspend fun setSystemPrompt(v: String) = edit { it[KEY_SYSTEM_PROMPT] = v }
 
     /** Restores the response-style dials only, leaving model and web settings alone. */
@@ -114,6 +165,7 @@ class SettingsRepository(private val context: Context) {
         val KEY_PROJECTOR_GPU = booleanPreferencesKey("projector_gpu")
         val KEY_WEB_ACCESS = booleanPreferencesKey("web_access")
         val KEY_WIKIPEDIA = booleanPreferencesKey("wikipedia_grounding")
+        val KEY_IMAGE_TOKENS = intPreferencesKey("image_tokens")
         val KEY_SYSTEM_PROMPT = stringPreferencesKey("system_prompt")
     }
 }

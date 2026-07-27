@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-27 — 0.3.0
+
+- llm — **image detail setting**, which is the fix for "the text is fragmented" on a photographed page. `clip` scales every image down until it fits a token budget, and llama.cpp caps Gemma 4 at 280 tokens - about 0.6 MP, which puts 10pt body text at 14 px. Downscaling less on our side does nothing, because clip resizes to its budget regardless of what it is handed. The budget itself is now settable: Standard 280, High 600, Maximum 1120 tokens per image
+- jni — `nativeLoadProjector` takes `imageMaxTokens`; the engine reloads the projector when it changes, since the budget is fixed at encoder init
+- media — the PDF page limit is computed instead of fixed at five: half the context window divided by what one page costs. Seven pages at stock settings, one at maximum detail on a 4096 window
+- media — PDF pages render at 2048 px now rather than 1536. There is no point matching the encoder's target: it resizes to its own budget anyway, and a crisp render downsampled beats a coarse one upscaled
+- build — **16 KB page size compatible.** Both `.so` files were already 16 KB-aligned (NDK r27 does that), but AGP 8.1.4 zipaligns APK entries to 4 KB, and an uncompressed library mapped straight out of the APK has to start on a 16 KB boundary. AGP 8.5.2 / Gradle 8.7 do it correctly; verified with `zipalign -c -P 16`
+
 ## 2026-07-27 — 0.2.1
 
 - ui — tapping a thumbnail opens the attachment full screen, with pinch zoom, double tap for 2x and tap to close. It shows the file the app prepared rather than handing the original to another app, which is the point: what is on screen is exactly what the model was given, and a PDF page that rendered badly or a photo that came out sideways is invisible at 64 dp

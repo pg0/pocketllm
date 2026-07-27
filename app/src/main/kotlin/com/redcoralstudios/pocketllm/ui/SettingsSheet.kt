@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redcoralstudios.pocketllm.llm.Dials
 import com.redcoralstudios.pocketllm.model.ModelCatalog
+import com.redcoralstudios.pocketllm.settings.ImageDetail
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -196,6 +197,21 @@ fun SettingsSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
                 steps = listOf(256, 512, 1024, 2048, 4096),
                 onChange = vm::setMaxTokens,
                 help = "Hard stop for a single answer.",
+            )
+
+            StepperRow(
+                label = "Image detail (${ImageDetail.label(settings.imageTokens)})",
+                value = settings.imageTokens,
+                suffix = "tokens per image",
+                steps = listOf(ImageDetail.STANDARD, ImageDetail.HIGH, ImageDetail.MAXIMUM),
+                onChange = vm::setImageTokens,
+                help = "How much of a picture the model actually sees. The encoder scales " +
+                    "every image down to this budget, so it is a resolution limit: at " +
+                    "Standard a photographed A4 page arrives around 0.6 MP, which is where " +
+                    "small print stops being legible. Raise it to read documents, and know " +
+                    "that it comes out of the same context window as the conversation. " +
+                    "A PDF's page limit follows from this and the context size: currently " +
+                    "${ImageDetail.pagesFor(settings.imageTokens, settings.contextSize)} pages.",
             )
 
             Spacer(Modifier.height(16.dp))

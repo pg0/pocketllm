@@ -24,6 +24,7 @@ import com.redcoralstudios.pocketllm.model.ModelStore
 import com.redcoralstudios.pocketllm.net.WebAugmenter
 import com.redcoralstudios.pocketllm.net.WebTools
 import com.redcoralstudios.pocketllm.settings.AppSettings
+import com.redcoralstudios.pocketllm.settings.ImageDetail
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -285,7 +286,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun attachPdf(uri: Uri) {
         _activity.value = "Rendering PDF pages"
-        val result = PdfPages.render(getApplication(), uri)
+        val s = settings.value
+        val result = PdfPages.render(
+            context = getApplication(),
+            uri = uri,
+            // How many pages fit depends on what one page costs, which is the
+            // detail setting, and on how much room there is, which is the
+            // context size. A fixed five was only ever right for one of those.
+            maxPages = ImageDetail.pagesFor(s.imageTokens, s.contextSize),
+        )
         val pages = result.getOrElse {
             _activity.value = null
             _attachError.value = it.message ?: "Could not read that PDF."
@@ -365,9 +374,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speech.stop()
     }
 
-    /** Loads the mmproj encoders on first attachment. */
+    /**
+     * Loads the mmproj encoders on first attachment.
+     *
+     * The image token budget is fixed when the encoder initialises, so changing
+     * the detail setting reloads it - which is why the setting lives in the
+     * sheet rather than next to the attach button.
+     */
     private suspend fun ensureProjector(): Boolean =
-        container.engine.ensureProjector(useGpu = settings.value.projectorOnGpu)
+        container.engine.ensureProjector(
+            useGpu = settings.value.projectorOnGpu,
+            imageMaxTokens = settings.value.imageTokens,
+        )
 
     // ------------------------------------------------------------------- chat
 
@@ -675,6 +693,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val ctx = getApplication<Application>()
             ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "?"
         }.getOrDefault("?")
+
+    fun setImageTokens(v: Int) = viewModelScope.launch { container.settings.setImageTokens(v) }
 
     fun setContextSize(v: Int) = viewModelScope.launch { container.settings.setContextSize(v) }
     fun setMaxTokens(v: Int) = viewModelScope.launch { container.settings.setMaxTokens(v) }

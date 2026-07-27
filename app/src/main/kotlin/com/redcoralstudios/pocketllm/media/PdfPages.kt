@@ -26,28 +26,26 @@ private const val TAG = "PocketLLM-pdf"
  * that defeats text extraction entirely: a scanned or photographed document has
  * no text layer at all, and looking at it is the only way to read it.
  *
- * The cost is honest and bounded: roughly 250 tokens a page against a 4096
- * window that also holds the question and the answer.
+ * The cost is honest and bounded: one page costs whatever the image detail
+ * setting is worth in tokens, out of a window that also holds the question and
+ * the answer, so the page limit is computed from both rather than fixed.
  */
 object PdfPages {
 
     /**
-     * Five pages, ~1250 tokens. Above this a document crowds out the
-     * conversation, and the count is surfaced in the UI rather than a longer
-     * file quietly arriving with its tail cut off.
+     * Rendered generously and left to clip to resize.
+     *
+     * There is no point matching the encoder's target exactly: clip scales
+     * every image to its own token budget anyway, and a crisp 2048 px render
+     * downsampled by it beats a coarse render upscaled. The cost is disk and a
+     * few hundred milliseconds, both of which are cheap here.
      */
-    const val MAX_PAGES = 5
-
-    /**
-     * Higher than a photo's 1024: a photo is of a scene, a page is of text, and
-     * body copy at 1024 px on A4 is where the small print stops being legible.
-     */
-    private const val RENDER_EDGE = 1536
+    private const val RENDER_EDGE = 2048
     private const val JPEG_QUALITY = 85
 
     data class Pages(val files: List<File>, val note: String)
 
-    suspend fun render(context: Context, uri: Uri): Result<Pages> =
+    suspend fun render(context: Context, uri: Uri, maxPages: Int): Result<Pages> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val descriptor: ParcelFileDescriptor =
@@ -58,7 +56,7 @@ object PdfPages {
                     PdfRenderer(fd).use { renderer ->
                         val total = renderer.pageCount
                         if (total == 0) error("That PDF has no pages.")
-                        val count = minOf(total, MAX_PAGES)
+                        val count = minOf(total, maxPages.coerceAtLeast(1))
 
                         val files = (0 until count).map { index ->
                             renderer.openPage(index).use { page ->

@@ -37,7 +37,13 @@ object LlamaBridge {
     ): Long
 
     /** Loads the mmproj file that supplies the vision + audio encoders. */
-    external fun nativeLoadProjector(handle: Long, path: String, useGpu: Boolean): Boolean
+    /** [imageMaxTokens] of -1 keeps the model's own limit. */
+    external fun nativeLoadProjector(
+        handle: Long,
+        path: String,
+        useGpu: Boolean,
+        imageMaxTokens: Int,
+    ): Boolean
 
     external fun nativeSupportsVision(handle: Long): Boolean
     external fun nativeSupportsAudio(handle: Long): Boolean
