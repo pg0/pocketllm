@@ -189,10 +189,15 @@ class LlmEngine(private val store: ModelStore) {
         }
 
         val params = Dials.params(creativity, factuality, maxTokens)
-        // A custom prompt replaces the style guidance, never the date: what day
-        // it is is a fact about the world, not a preference.
+        // A custom prompt replaces the style guidance, never the date, the
+        // reply language or the retrieval rule: what day it is and what the
+        // app already fetched are facts about the world, not preferences, and
+        // answering in the language you were asked in is not a style choice.
         val system = systemOverride?.takeIf { it.isNotBlank() }
-            ?.let { "${Dials.dateLine()}\n\n${Dials.WEB_CONTEXT_RULE}\n\n$it" }
+            ?.let {
+                listOf(Dials.dateLine(), Dials.LANGUAGE_RULE, Dials.WEB_CONTEXT_RULE, it)
+                    .joinToString("\n\n")
+            }
             ?: Dials.systemPrompt(creativity, factuality)
 
         // Native only injects the system prompt on the first turn. If the dials

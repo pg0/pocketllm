@@ -36,17 +36,23 @@ class WebAugmenter(val tools: WebTools = WebTools()) {
      * @param wikipediaGrounding pull the matching Wikipedia article for
      *        fact-shaped questions and put it ahead of everything else
      * @param fallbackLang used only if the English article is missing
+     * @param onProgress called before each network round trip, with what is
+     *        about to happen. Retrieval is several sequential requests and the
+     *        slow ones are other people's servers; without this the UI shows one
+     *        label for all of it and a slow site is indistinguishable from a
+     *        hang.
      */
     suspend fun augment(
         userText: String,
         searchEnabled: Boolean,
         wikipediaGrounding: Boolean = false,
         fallbackLang: String = "de",
+        onProgress: (String) -> Unit = {},
     ): Augmented {
         val urls = WebTools.extractUrls(userText)
 
         // An explicit link always wins: the user named the source.
-        if (urls.isNotEmpty()) return readPages(userText, urls)
+        if (urls.isNotEmpty()) return readPages(userText, urls, onProgress)
 
         // "Show me a picture of X" is a lookup, not a generation request: the
         // model has no image output, but the encyclopedia article has a photo.
@@ -58,13 +64,14 @@ class WebAugmenter(val tools: WebTools = WebTools()) {
         // The toggle is the decision. With grounding on the app looks things up;
         // the only messages skipped are ones no article could answer.
         val wiki = if (wikipediaGrounding && (wantsImage || WebTools.worthLookingUp(userText))) {
+            onProgress("Checking Wikipedia")
             tools.wikipedia(query, fallbackLang)
         } else {
             null
         }
 
         return when {
-            searchEnabled -> runSearch(userText, wiki, wantsImage)
+            searchEnabled -> runSearch(userText, wiki, wantsImage, onProgress)
             wiki != null -> wikiOnly(userText, wiki, wantsImage)
             else -> Augmented(userText, emptyList())
         }
@@ -85,12 +92,20 @@ class WebAugmenter(val tools: WebTools = WebTools()) {
     private fun wikiBlock(wiki: WikiArticle): String =
         "[Encyclopedia: ${wiki.title} - ${wiki.url}]\n${wiki.extract}"
 
-    private suspend fun readPages(userText: String, urls: List<String>): Augmented {
+    private suspend fun readPages(
+        userText: String,
+        urls: List<String>,
+        onProgress: (String) -> Unit,
+    ): Augmented {
         val budget = MAX_TOTAL_CHARS / urls.size
         val blocks = mutableListOf<String>()
         val sources = mutableListOf<String>()
 
-        for (url in urls) {
+        for ((index, url) in urls.withIndex()) {
+            onProgress(
+                if (urls.size > 1) "Reading ${index + 1}/${urls.size}: ${hostOf(url)}"
+                else "Reading ${hostOf(url)}",
+            )
             val page = tools.fetch(url) ?: continue
             if (page.text.isBlank()) continue
             sources += page.url
@@ -116,7 +131,9 @@ class WebAugmenter(val tools: WebTools = WebTools()) {
         userText: String,
         wiki: WikiArticle?,
         wantsImage: Boolean,
+        onProgress: (String) -> Unit,
     ): Augmented {
+        onProgress("Searching DuckDuckGo")
         val results = tools.search(userText)
         if (results.isEmpty() && wiki == null) {
             return Augmented(
@@ -150,8 +167,11 @@ class WebAugmenter(val tools: WebTools = WebTools()) {
 
         // Snippets alone are thin, so pull the full text of the top hit -- but
         // only when Wikipedia has not already supplied a solid article, or the
-        // two together would crowd out the conversation.
+        // two together would crowd out the conversation. Only the top hit: the
+        // other four contribute their snippet and nothing is downloaded for
+        // them.
         if (wiki == null) {
+            onProgress("Reading ${hostOf(results.first().url)}")
             tools.fetch(results.first().url)?.let { page ->
                 if (page.text.isNotBlank()) {
                     blocks += "[Full text of ${page.url}]\n${page.text.take(TOP_RESULT_CHARS)}"
@@ -171,6 +191,11 @@ class WebAugmenter(val tools: WebTools = WebTools()) {
             imagePageUrl = image?.let { wiki.url },
         )
     }
+
+    /** Host only: a full URL does not fit on a status line. */
+    private fun hostOf(url: String): String = runCatching {
+        java.net.URI(if (url.startsWith("http")) url else "https://$url").host ?: url
+    }.getOrDefault(url).removePrefix("www.")
 
     private fun wrap(blocks: List<String>, userText: String, instruction: String): String =
         buildString {

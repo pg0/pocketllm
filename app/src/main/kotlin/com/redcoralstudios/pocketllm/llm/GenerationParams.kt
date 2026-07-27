@@ -103,6 +103,23 @@ object Dials {
             "but does not contain the answer, say precisely that instead."
 
     /**
+     * Keeps the answer in the language of the question.
+     *
+     * Three things push a multilingual model towards English here and they add
+     * up: this system prompt is written in English, Wikipedia is queried in
+     * English first because those articles are longer and better cited, and
+     * search results are mostly English too. A German question can end up as
+     * the only German text in the whole prompt, and the model follows the
+     * majority. Naming the rule explicitly is cheaper than translating the
+     * prompt or giving up the English sources.
+     */
+    const val LANGUAGE_RULE: String =
+        "Always answer in the language the user wrote their message in. These " +
+            "instructions are in English and retrieved sources are often in English; " +
+            "neither has any bearing on the language of your reply. Translate anything " +
+            "you quote into the user's language, and leave proper names as they are."
+
+    /**
      * Gemma 4 has a real system role, so this text becomes its own turn at the
      * head of the conversation. When a dial moves mid-chat the prompt is
      * restated inline rather than resetting the conversation.
@@ -149,7 +166,7 @@ object Dials {
             """.trimIndent()
         }
 
-        return listOf(dateLine(), WEB_CONTEXT_RULE, grounding, tone)
+        return listOf(dateLine(), LANGUAGE_RULE, WEB_CONTEXT_RULE, grounding, tone)
             .filter { it.isNotBlank() }
             .joinToString("\n\n")
     }

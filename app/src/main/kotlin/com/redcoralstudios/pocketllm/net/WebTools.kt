@@ -5,8 +5,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.net.URLDecoder
+import java.nio.charset.Charset
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "PocketLLM-web"
@@ -285,16 +288,45 @@ class WebTools {
                     return@use null
                 }
 
-                val body = response.body?.string().orEmpty()
-                if (body.isBlank()) return@use null
+                // Whole HTML document, then stripped locally - there is no
+                // text-only endpoint to ask for. What there is instead is a
+                // byte cap: only ~6000 characters of stripped text are ever
+                // used, and a news page is easily megabytes of markup, so
+                // reading the entire body would spend somebody's mobile data
+                // on markup that gets thrown away microseconds later.
+                val stream = response.body?.byteStream() ?: return@use null
+                val charset = response.body?.contentType()?.charset() ?: Charsets.UTF_8
+                val capped = readCapped(stream, MAX_PAGE_BYTES, charset)
+                if (capped.text.isBlank()) return@use null
+
+                // Cutting mid-tag would leave "<div class=" as visible text.
+                val html = if (capped.truncated) capped.text.substringBeforeLast('>') + '>'
+                else capped.text
 
                 PageText(
                     url = normalised,
-                    title = extractTitle(body),
-                    text = htmlToText(body).take(MAX_PAGE_CHARS),
+                    title = extractTitle(html),
+                    text = htmlToText(html).take(MAX_PAGE_CHARS),
                 )
             }
         }.onFailure { Log.w(TAG, "fetch failed: ${it.message}") }.getOrNull()
+    }
+
+    private class Capped(val text: String, val truncated: Boolean)
+
+    /** Reads at most [limit] bytes, so a huge page cannot run up the bill. */
+    private fun readCapped(stream: InputStream, limit: Long, charset: Charset): Capped {
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        var total = 0L
+        while (total < limit) {
+            val want = minOf(buffer.size.toLong(), limit - total).toInt()
+            val read = stream.read(buffer, 0, want)
+            if (read <= 0) break
+            out.write(buffer, 0, read)
+            total += read
+        }
+        return Capped(out.toString(charset.name()), truncated = total >= limit)
     }
 
     /**
@@ -381,6 +413,15 @@ class WebTools {
     companion object {
         const val MAX_RESULTS = 5
         const val MAX_PAGE_CHARS = 6_000
+
+        /**
+         * Ceiling on what is downloaded per page. 512 KB of markup strips to
+         * far more than [MAX_PAGE_CHARS] of text on any real page, so the cap
+         * costs nothing in quality and stops a bloated site from pulling
+         * megabytes over mobile data to be truncated on arrival.
+         */
+        const val MAX_PAGE_BYTES = 512L * 1024
+
         const val MAX_WIKI_CHARS = 3_500
         const val MIN_WIKI_CHARS = 120
         const val WIKI_THUMB_PX = 640

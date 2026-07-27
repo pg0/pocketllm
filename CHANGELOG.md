@@ -1,6 +1,10 @@
 # Changelog
 
-## 2026-07-27 — 0.1.9
+## 2026-07-27 — 0.1.10
+
+- ui — the status line names each retrieval step as it happens: "Checking Wikipedia", "Searching DuckDuckGo", "Reading 2/3: heise.de". Retrieval is several sequential requests against other people's servers, and one static label for all of them makes a slow site look exactly like a hang
+- llm — FIX a German question answered in English. Three things push the reply towards English and they add up: the system prompt is written in English, Wikipedia is queried in English first because those articles are better cited, and search results are mostly English. The question ends up the only non-English text in the prompt and the model follows the majority. The rule is now stated in every system prompt, custom ones included, rather than only in the two Wikipedia retrieval blocks
+- net — pages are capped at **512 KB downloaded**. Only ~6000 characters of stripped text are ever used, so reading a multi-megabyte page in full spent mobile data on markup that was discarded on arrival. A truncated body is cut back to the last complete tag so no `<div class=` shows up as text
 
 - ui — the source URLs under an answer open in the browser when tapped. They were plain labels; listing what was fetched only means something if it can be opened and checked
 - net — FIX citation numbers pointing at the wrong source: search hits were numbered from 1 while Wikipedia sat unnumbered above them in the same list, so "[2]" in an answer was the third entry shown. Numbering now runs across both, and the list under the answer carries the same numbers

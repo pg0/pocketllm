@@ -441,6 +441,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 searchEnabled = searchEnabled,
                 wikipediaGrounding = wikipedia,
                 fallbackLang = Locale.getDefault().language,
+                // Retrieval is several sequential requests against other
+                // people's servers. One static label for all of them makes a
+                // slow site look exactly like a hang.
+                onProgress = { _activity.value = it },
             )
         }.getOrNull()
 
