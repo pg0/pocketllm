@@ -30,7 +30,8 @@ download, and after that only if you switch web access on.
 - **Web access, off by default.** Turn it on and a link in your message gets
   fetched and read, and the `+` menu offers two sources to check: DuckDuckGo
   search and Wikipedia. Both are off until you check them. The URLs actually
-  read are listed under the answer.
+  read are listed under the answer, numbered to match the citations in it, and
+  open in the browser when tapped.
 - **Markdown answers.** Headings, lists, tables, code blocks, and links that
   open when tapped. Images the model emits as `![alt](url)` are fetched and
   displayed, or fall back to their alt text when the URL turns out to be

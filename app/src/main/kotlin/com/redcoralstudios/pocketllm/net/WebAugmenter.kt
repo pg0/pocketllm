@@ -132,14 +132,20 @@ class WebAugmenter(val tools: WebTools = WebTools()) {
 
         // Wikipedia goes first, and the instruction below names it as the
         // source to trust when accounts disagree.
+        //
+        // The numbering runs across both, which it did not use to: the search
+        // hits were numbered from 1 while Wikipedia sat unnumbered above them,
+        // so a citation of "[2]" pointed at the third entry of the list shown
+        // under the answer. Numbering by position in `sources` keeps what the
+        // model cites and what the user can tap on the same footing.
         if (wiki != null) {
-            blocks += wikiBlock(wiki)
             sources += wiki.url
+            blocks += "[${sources.size}] " + wikiBlock(wiki)
         }
 
-        results.forEachIndexed { index, r ->
+        results.forEach { r ->
             sources += r.url
-            blocks += "[${index + 1}] ${r.title}\n${r.url}\n${r.snippet}"
+            blocks += "[${sources.size}] ${r.title}\n${r.url}\n${r.snippet}"
         }
 
         // Snippets alone are thin, so pull the full text of the top hit -- but

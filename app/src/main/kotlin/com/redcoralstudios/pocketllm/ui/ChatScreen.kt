@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,9 +69,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -425,7 +428,8 @@ private fun MessageBubble(message: ChatMessage) {
                 }
 
                 // Showing what was actually fetched keeps "it searched the web"
-                // from being something the user has to take on trust.
+                // from being something the user has to take on trust - which
+                // only works if the source can be opened and checked.
                 if (message.sources.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
@@ -433,18 +437,38 @@ private fun MessageBubble(message: ChatMessage) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
-                    message.sources.forEach { source ->
-                        Text(
-                            source,
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                    message.sources.forEachIndexed { index, source ->
+                        SourceLink(number = index + 1, url = source)
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * One fetched URL under an answer, numbered to match the `[n]` the model cites
+ * and opening in the browser when tapped.
+ *
+ * The number is not decoration: the whole point of listing sources is that the
+ * claim can be checked against them, which needs the citation and the tappable
+ * link to refer to the same thing.
+ */
+@Composable
+private fun SourceLink(number: Int, url: String) {
+    val uriHandler = LocalUriHandler.current
+    Text(
+        text = "[$number] $url",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        textDecoration = TextDecoration.Underline,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { runCatching { uriHandler.openUri(url) } }
+            .padding(vertical = 2.dp),
+    )
 }
 
 /**

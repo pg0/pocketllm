@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-27 — 0.1.9
+
+- ui — the source URLs under an answer open in the browser when tapped. They were plain labels; listing what was fetched only means something if it can be opened and checked
+- net — FIX citation numbers pointing at the wrong source: search hits were numbered from 1 while Wikipedia sat unnumbered above them in the same list, so "[2]" in an answer was the third entry shown. Numbering now runs across both, and the list under the answer carries the same numbers
+
 ## 2026-07-27 — 0.1.8
 
 - ui — **Wikipedia is a checkbox in the + menu**, next to web search, and it is **off by default**. It was consulted automatically for anything fact-shaped, which is a lookup nobody asked for, spending context on an article that may have nothing to do with the question. Both sources now have to be checked
