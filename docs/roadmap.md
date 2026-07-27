@@ -147,27 +147,31 @@ path is wired up on the Android side.
 Conversations currently die with the process. Room or a JSON file, plus a chat
 list, plus export.
 
-## 8. Video input - partially shipped 2026-07-27
+## 8. Video input - shipped and then removed, 2026-07-27
 
 llama.cpp's mtmd video helper shells out to ffmpeg, which does not exist on
 Android, so `MTMD_VIDEO` is off and there is no native video path at all.
-`VideoPrep` samples frames with `MediaMetadataRetriever` instead and hands them
-to the vision encoder as an ordered image sequence.
+`VideoPrep` sampled frames with `MediaMetadataRetriever` and handed them to the
+vision encoder as an ordered image sequence.
 
 Six frames, because each costs roughly 250 tokens of a 4096-token context that
 also has to hold the question and the answer. Gemma 4 nominally accepts a minute
-at 1 fps; sixty frames would be ~15,000 tokens, which is not available here. The
-menu and the composer both say "as 6 frames" rather than letting it look like
-the model watched the clip.
+at 1 fps; sixty frames would be ~15,000 tokens, which is not available here.
 
-Still open:
+**Removed the same day it shipped.** Six stills of an entire clip is not video
+input, and no amount of labelling makes it one: the model cannot see motion,
+cuts, or anything between the samples, so it answers confidently about a clip it
+mostly did not see. That is worse than the app not offering video. Deleted in
+0.1.6; it is in git history if the context budget ever changes.
 
-- **The soundtrack is dropped.** Extracting it and feeding it to the audio
-  encoder would double the cost of an already expensive attachment.
-- **Frame count should scale with context size.** At 16k a longer sample is
-  affordable; it is currently fixed.
-- **Scene-change sampling** would beat even spacing for anything but a static
-  shot.
+What it would take to bring back honestly:
+
+- **A context large enough for real sampling.** At 32k, 1 fps over a short clip
+  becomes affordable and the frames start describing motion rather than sampling
+  it.
+- **Scene-change sampling** instead of even spacing, so the frames land on cuts.
+- **The soundtrack**, extracted and fed to the audio encoder - for most clips
+  that carries more of the content than any six frames do.
 
 ## 8a. Whisper - not needed, twice over
 

@@ -23,15 +23,14 @@ download, and after that only if you switch web access on.
   hundred audio tokens out of 4096 where its transcript costs a dozen, a
   misheard question is visible instead of looking like a stupid model, and
   retrieval has something to search with.
-- **Audio and video in.** The `+` menu attaches an image, an audio file - which
-  *does* go to the model's audio encoder directly, for when the sound itself is
-  the subject - or a video, which is sampled into frames.
+- **Audio in.** The `+` menu also attaches an audio file, which *does* go to the
+  model's audio encoder directly, for when the sound itself is the subject.
 - **Two dials**, creativity and fact-checking, described below, plus an
   editable system prompt for when the dials are not enough.
 - **Web access, off by default.** Turn it on and a link in your message gets
   fetched and read, Wikipedia is consulted for questions about the world, and
-  the globe button adds a DuckDuckGo search. The URLs actually read are listed
-  under the answer.
+  the web-search item in the `+` menu adds a DuckDuckGo search. The URLs
+  actually read are listed under the answer.
 - **Markdown answers.** Headings, lists, tables, code blocks, and links that
   open when tapped. Images the model emits as `![alt](url)` are fetched and
   displayed, or fall back to their alt text when the URL turns out to be
@@ -75,14 +74,15 @@ With it on:
   article beats five snippets from arbitrary sites. English is tried first
   because those articles are longer and better cited; the model is told to
   answer in whatever language you asked in.
-- The globe button turns on **DuckDuckGo** search. It stays on until you turn it
-  off. Top results plus the full text of the first hit go in as context.
+- **Web search** in the `+` menu turns on **DuckDuckGo**. It stays on until you
+  turn it off, and the `+` is tinted while it is on. Top results plus the full
+  text of the first hit go in as context.
 - Asking to *see* something ("show me a picture of X") pulls the article's lead
   image and displays it under the answer, and tells the model not to claim it
   cannot show pictures.
 - A question turning on a year or on "latest / aktuell / wer hat gewonnen"
-  searches **without waiting for the globe button**. Those cannot be answered
-  from weights at all.
+  searches **without waiting for the toggle**. Those cannot be answered from
+  weights at all.
 - If the answer still comes back as "I don't know", the turn is rolled back and
   asked again with search results. The rollback matters: a retry stacked
   underneath the model's own refusal tends to get agreed with.
@@ -190,7 +190,8 @@ app/src/main/kotlin/com/redcoralstudios/pocketllm/
   model/ModelDownloader.kt  resumable range-request download
   model/ModelStore.kt       paths, completeness, RAM/thread heuristics
   media/ImagePrep.kt        downscale + EXIF rotate before the vision encoder
-  media/AudioRecorder.kt    16 kHz mono WAV for the audio encoder
+  media/SpeechToText.kt     platform recogniser -> text in the composer
+  media/MediaImport.kt      audio file import for the audio encoder
   net/WebTools.kt           search, page fetch, Wikipedia, HTML-to-text
   net/WebAugmenter.kt       builds the retrieval block prepended to a turn
   ui/Markdown.kt            block + inline markdown renderer
@@ -235,9 +236,11 @@ Notes worth knowing before changing anything:
   instructions live in the user turn, which loses to a habit that strong, so the
   correction has to be in the system prompt - and is restated next to the
   evidence for good measure.
-- **There is no native video path.** `MTMD_VIDEO` is off because llama.cpp's
-  helper shells out to ffmpeg. Video is sampled into six frames, and the UI says
-  so rather than implying the model watched the clip.
+- **There is no native video path**, and video attachment was dropped because of
+  it. `MTMD_VIDEO` is off because llama.cpp's helper shells out to ffmpeg, and
+  frame sampling into a 4096-token context affords about six stills of an entire
+  clip - not six per second. That is a worse answer than admitting the app does
+  not do video.
 - **Only the new suffix is ever tokenized.** The full transcript is re-rendered
   through the chat template each turn, then diffed against what is already in
   the KV cache - the standard llama.cpp approach.

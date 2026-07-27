@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-27 — 0.1.6
+
+- ui — FIX the caret staying at the top of the composer while dictation wrote into it, so a spoken sentence longer than one line scrolled out of sight below the field. The composer state is a `TextFieldValue` now and every write from dictation carries the caret to the end with it
+- media — **video attachment removed.** It was six stills from the whole clip, not six per second: llama.cpp's video path shells out to ffmpeg, which Android does not have, and 4096 tokens of context cannot hold enough frames for the sampling to mean anything. Six frames of an arbitrary video is a worse answer than no video. `VideoPrep` deleted; images and audio files still attach
+- ui — the web-search globe moved into the `+` menu, with a check mark when it is on. Two icons fewer in the composer row is that much more text field; it is a toggle, not something pressed every message. The `+` itself is tinted while search is armed, so a setting behind a menu is not a setting you forget is on
+
 ## 2026-07-27 — 0.1.5
 
 - ui — message text is selectable (long press) and double tap copies the whole message

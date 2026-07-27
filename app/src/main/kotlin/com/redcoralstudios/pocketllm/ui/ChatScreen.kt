@@ -27,12 +27,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -44,9 +44,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -67,11 +69,11 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redcoralstudios.pocketllm.llm.EngineState
-import com.redcoralstudios.pocketllm.media.VideoPrep
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,7 +91,6 @@ fun ChatScreen(vm: ChatViewModel) {
 
     // The composer text lives in the view model so dictation can write into it.
     val input by vm.input.collectAsStateWithLifecycle()
-    val videoNote by vm.videoNote.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
@@ -100,10 +101,6 @@ fun ChatScreen(vm: ChatViewModel) {
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> uri?.let(vm::attachImage) }
-
-    val videoPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia(),
-    ) { uri -> uri?.let(vm::attachVideo) }
 
     // Audio is not a "visual media" type, so it needs the document picker.
     val audioPicker = rememberLauncherForActivityResult(
@@ -161,16 +158,6 @@ fun ChatScreen(vm: ChatViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(messages, key = { it.id }) { MessageBubble(it) }
-            }
-
-            // Says what the model will actually receive from a video, rather
-            // than letting six stills pass for "it watched the clip".
-            videoNote?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                )
             }
 
             if (pending.isNotEmpty()) {
@@ -237,11 +224,6 @@ fun ChatScreen(vm: ChatViewModel) {
                 onPickImage = {
                     imagePicker.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                    )
-                },
-                onPickVideo = {
-                    videoPicker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
                     )
                 },
                 onPickAudio = { audioPicker.launch(arrayOf("audio/*")) },
@@ -464,8 +446,8 @@ private fun MessageBubble(message: ChatMessage) {
 
 @Composable
 private fun InputRow(
-    input: String,
-    onInputChange: (String) -> Unit,
+    input: TextFieldValue,
+    onInputChange: (TextFieldValue) -> Unit,
     busy: Boolean,
     recording: Boolean,
     webAccess: Boolean,
@@ -475,7 +457,6 @@ private fun InputRow(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onPickImage: () -> Unit,
-    onPickVideo: () -> Unit,
     onPickAudio: () -> Unit,
     onMicDown: () -> Unit,
     onMicUp: () -> Unit,
@@ -494,7 +475,16 @@ private fun InputRow(
     ) {
         Box {
             IconButton(onClick = { showAttachMenu = true }, enabled = enabled && !busy) {
-                Icon(Icons.Default.Add, contentDescription = "Attach")
+                // Tinted while search is armed. The globe is behind the menu
+                // now, and a setting you cannot see is a setting that surprises
+                // you three messages later.
+                val armed = webAccess && searchArmed
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = if (armed) "Attach - web search is on" else "Attach",
+                    tint = if (armed) MaterialTheme.colorScheme.primary
+                    else LocalContentColor.current,
+                )
             }
             DropdownMenu(
                 expanded = showAttachMenu,
@@ -510,30 +500,40 @@ private fun InputRow(
                     leadingIcon = { Icon(Icons.Default.GraphicEq, contentDescription = null) },
                     onClick = { showAttachMenu = false; onPickAudio() },
                 )
+
+                HorizontalDivider()
+
+                // Web search lives in the menu rather than in the row: it is a
+                // toggle, not a thing you press every message, and every icon
+                // out here comes straight off the width of the text field.
                 DropdownMenuItem(
-                    text = { Text("Video") },
-                    // Named for what actually happens: there is no video path
-                    // in llama.cpp on Android, so the model sees stills.
-                    trailingIcon = {
-                        Text(
-                            "as ${VideoPrep.DEFAULT_FRAMES} frames",
-                            style = MaterialTheme.typography.labelSmall,
+                    text = { Text("Web search") },
+                    enabled = webAccess,
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Public,
+                            contentDescription = null,
+                            tint = if (searchArmed && webAccess) MaterialTheme.colorScheme.primary
+                            else LocalContentColor.current,
                         )
                     },
-                    leadingIcon = { Icon(Icons.Default.Movie, contentDescription = null) },
-                    onClick = { showAttachMenu = false; onPickVideo() },
-                )
-            }
-        }
+                    trailingIcon = {
+                        when {
+                            !webAccess -> Text(
+                                "off in settings",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
 
-        if (webAccess) {
-            IconButton(onClick = onToggleSearch, enabled = enabled && !busy) {
-                Icon(
-                    Icons.Default.Public,
-                    contentDescription = if (searchArmed) "Web search on - tap to turn off"
-                    else "Turn on web search",
-                    tint = if (searchArmed) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                            searchArmed -> Icon(
+                                Icons.Default.Check,
+                                contentDescription = "on",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+
+                            else -> Unit
+                        }
+                    },
+                    onClick = { showAttachMenu = false; onToggleSearch() },
                 )
             }
         }

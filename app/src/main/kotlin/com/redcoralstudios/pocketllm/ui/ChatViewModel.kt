@@ -2,6 +2,8 @@ package com.redcoralstudios.pocketllm.ui
 
 import android.app.Application
 import android.net.Uri
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.redcoralstudios.pocketllm.PocketLlmApp
@@ -12,7 +14,6 @@ import com.redcoralstudios.pocketllm.media.Dictation
 import com.redcoralstudios.pocketllm.media.ImagePrep
 import com.redcoralstudios.pocketllm.media.MediaImport
 import com.redcoralstudios.pocketllm.media.SpeechToText
-import com.redcoralstudios.pocketllm.media.VideoPrep
 import com.redcoralstudios.pocketllm.model.DownloadProgress
 import com.redcoralstudios.pocketllm.model.ModelCatalog
 import com.redcoralstudios.pocketllm.model.ModelSpec
@@ -92,9 +93,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      * The composer's text. Owned here rather than by the screen so dictation
      * can write into it and the user can then read and correct it before
      * sending -- the whole point of transcribing instead of sending audio.
+     *
+     * A [TextFieldValue] rather than a String because the caret position is
+     * part of the state: text arriving from dictation has to drag the caret to
+     * the end with it, or the field keeps showing the first line while the
+     * transcript grows out of sight below.
      */
-    private val _input = MutableStateFlow("")
-    val input: StateFlow<String> = _input.asStateFlow()
+    private val _input = MutableStateFlow(TextFieldValue(""))
+    val input: StateFlow<TextFieldValue> = _input.asStateFlow()
 
     /**
      * Web search for the next message. Stays on once switched on -- it used to
@@ -115,10 +121,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Set when an attachment could not be prepared, so it is not lost silently. */
     private val _attachError = MutableStateFlow<String?>(null)
     val attachError: StateFlow<String?> = _attachError.asStateFlow()
-
-    /** "6 frames sampled from 12s of video", so the sampling is not hidden. */
-    private val _videoNote = MutableStateFlow<String?>(null)
-    val videoNote: StateFlow<String?> = _videoNote.asStateFlow()
 
     private var generation: Job? = null
     private var dictation: Job? = null
@@ -237,40 +239,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Attaches a video as a short sequence of frames.
-     *
-     * There is no native video path - see [VideoPrep] - so this is genuinely
-     * "some stills from your video", and the note on the message says so rather
-     * than letting it look like the model watched the whole thing.
-     */
-    fun attachVideo(uri: Uri) {
-        viewModelScope.launch {
-            _activity.value = "Extracting frames"
-            val result = VideoPrep.extractFrames(getApplication(), uri)
-            val frames = result.getOrElse {
-                _activity.value = null
-                _attachError.value = it.message ?: "Could not read that video."
-                return@launch
-            }
-            _pending.value = _pending.value +
-                frames.files.map { Attachment(it.absolutePath, isAudio = false) }
-            _videoNote.value = frames.note
-            _activity.value = "Loading image encoder"
-            val ok = ensureProjector()
-            _activity.value = null
-            if (!ok) _attachError.value = "The image encoder could not be loaded."
-        }
-    }
-
     fun removeAttachment(attachment: Attachment) {
         _pending.value = _pending.value - attachment
-        if (_pending.value.isEmpty()) _videoNote.value = null
         File(attachment.path).delete()
     }
 
-    fun setInput(text: String) {
-        _input.value = text
+    fun setInput(value: TextFieldValue) {
+        _input.value = value
+    }
+
+    /** Replaces the composer text and parks the caret at the end of it. */
+    private fun setInputText(text: String) {
+        _input.value = TextFieldValue(text, TextRange(text.length))
     }
 
     /**
@@ -291,15 +271,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
         _isRecording.value = true
         // Anything already typed is kept; dictation appends to it.
-        val prefix = _input.value.let { if (it.isBlank()) "" else it.trimEnd() + " " }
+        val prefix = _input.value.text.let { if (it.isBlank()) "" else it.trimEnd() + " " }
 
         dictation = viewModelScope.launch {
             try {
                 speech.listen(getApplication()).collect { event ->
                     when (event) {
-                        is Dictation.Partial -> _input.value = prefix + event.text
+                        // Each partial rewrites the whole field, so the caret
+                        // has to be moved with it - see [_input].
+                        is Dictation.Partial -> setInputText(prefix + event.text)
                         is Dictation.Final -> if (event.text.isNotBlank()) {
-                            _input.value = prefix + event.text
+                            setInputText(prefix + event.text)
                         }
                         is Dictation.Level -> _recordingLevel.value = event.rms
                         is Dictation.Failed -> _attachError.value = event.reason
@@ -322,15 +304,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------------- chat
 
-    fun send(text: String = _input.value) {
+    fun send(text: String = _input.value.text) {
         val trimmed = text.trim()
         val attachments = _pending.value
         if (trimmed.isEmpty() && attachments.isEmpty()) return
         if (busy.value) return
 
         _pending.value = emptyList()
-        _input.value = ""
-        _videoNote.value = null
+        _input.value = TextFieldValue("")
 
         val userMessage = ChatMessage(nextId++, Role.USER, trimmed, attachments)
         val replyId = nextId++
