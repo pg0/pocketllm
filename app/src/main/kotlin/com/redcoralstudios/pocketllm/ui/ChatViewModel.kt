@@ -10,6 +10,7 @@ import com.redcoralstudios.pocketllm.PocketLlmApp
 import com.redcoralstudios.pocketllm.llm.Dials
 import com.redcoralstudios.pocketllm.llm.EngineState
 import com.redcoralstudios.pocketllm.llm.GenChunk
+import com.redcoralstudios.pocketllm.llm.TurnStats
 import com.redcoralstudios.pocketllm.media.Dictation
 import com.redcoralstudios.pocketllm.media.DocumentImport
 import com.redcoralstudios.pocketllm.media.ImagePrep
@@ -76,6 +77,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     val engineState: StateFlow<EngineState> = container.engine.state
     val busy: StateFlow<Boolean> = container.engine.busy
+    val stats: StateFlow<TurnStats?> = container.engine.stats
 
     val settings: StateFlow<AppSettings> = container.settings.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings.DEFAULT)
@@ -695,6 +697,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }.getOrDefault("?")
 
     fun setImageTokens(v: Int) = viewModelScope.launch { container.settings.setImageTokens(v) }
+
+    fun setShowStats(v: Boolean) = viewModelScope.launch { container.settings.setShowStats(v) }
 
     fun setContextSize(v: Int) = viewModelScope.launch { container.settings.setContextSize(v) }
     fun setMaxTokens(v: Int) = viewModelScope.launch { container.settings.setMaxTokens(v) }

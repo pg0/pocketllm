@@ -63,6 +63,9 @@ object LlamaBridge {
     external fun nativeCancel(handle: Long)
 
     external fun nativeContextUsed(handle: Long): Int
+
+    /** {prompt ms, decode ms, decoded tokens, media tokens} of the last turn. */
+    external fun nativeLastTurnStats(handle: Long): LongArray
     external fun nativeContextSize(handle: Long): Int
 
     external fun nativeFree(handle: Long)

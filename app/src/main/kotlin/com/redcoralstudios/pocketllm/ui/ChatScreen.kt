@@ -79,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redcoralstudios.pocketllm.llm.EngineState
+import com.redcoralstudios.pocketllm.llm.TurnStats
 import com.redcoralstudios.pocketllm.media.DocumentImport
 import com.redcoralstudios.pocketllm.media.PendingDocument
 
@@ -96,6 +97,7 @@ fun ChatScreen(vm: ChatViewModel) {
     val activity by vm.activity.collectAsStateWithLifecycle()
     val attachError by vm.attachError.collectAsStateWithLifecycle()
     val attachNote by vm.attachNote.collectAsStateWithLifecycle()
+    val stats by vm.stats.collectAsStateWithLifecycle()
     val pendingDocs by vm.pendingDocuments.collectAsStateWithLifecycle()
 
     // The composer text lives in the view model so dictation can write into it.
@@ -292,6 +294,10 @@ fun ChatScreen(vm: ChatViewModel) {
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
+            }
+
+            if (settings.showStats) {
+                StatsBar(stats, settings.contextSize)
             }
 
             InputRow(
@@ -554,6 +560,63 @@ private fun MessageBubble(message: ChatMessage, onOpenImage: (String) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/**
+ * Context usage and speed, for when the app is being judged rather than used.
+ *
+ * Context is the number that matters most: it fills up silently and the
+ * conversation ends when it does, so a bar that creeps towards full is a
+ * warning nothing else gives. Speed is the one that says whether the phone is
+ * coping - the same number that turned "voice feels slow" into a missing
+ * compiler flag.
+ *
+ * [fallbackContext] is the setting's value, shown before the first turn has
+ * produced real numbers.
+ */
+@Composable
+private fun StatsBar(stats: TurnStats?, fallbackContext: Int) {
+    val used = stats?.contextUsed ?: 0
+    val size = stats?.contextSize?.takeIf { it > 0 } ?: fallbackContext
+    val fraction = if (size > 0) used.toFloat() / size else 0f
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "ctx $used / $size (${(fraction * 100).toInt()}%)",
+                style = MaterialTheme.typography.labelSmall,
+                // Turns red as the window runs out, because the failure it
+                // predicts is the conversation stopping dead.
+                color = if (fraction > 0.85f) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.weight(1f))
+            if (stats != null && stats.decodedTokens > 0) {
+                Text(
+                    buildString {
+                        append("%.1f".format(stats.tokensPerSecond)).append(" tok/s")
+                        append(" · ").append(stats.decodedTokens).append(" tok")
+                        append(" · prompt ").append(stats.promptMs).append(" ms")
+                        if (stats.mediaTokens > 0) {
+                            append(" · media ").append(stats.mediaTokens).append(" tok")
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        LinearProgressIndicator(
+            progress = { fraction.coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth().height(2.dp),
+            color = if (fraction > 0.85f) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.primary,
+        )
     }
 }
 

@@ -83,6 +83,8 @@ data class AppSettings(
      * budget, so it is the resolution ceiling. See [ImageDetail].
      */
     val imageTokens: Int,
+    /** Show context usage and speed under the conversation. */
+    val showStats: Boolean,
     /**
      * User-written system prompt. Blank means "generate it from the dials".
      * When set, this text is used verbatim and the dials affect only sampling.
@@ -105,6 +107,7 @@ data class AppSettings(
             // the question.
             wikipediaGrounding = false,
             imageTokens = ImageDetail.STANDARD,
+            showStats = false,
             systemPrompt = "",
         )
     }
@@ -128,6 +131,7 @@ class SettingsRepository(private val context: Context) {
             webAccess = p[KEY_WEB_ACCESS] ?: AppSettings.DEFAULT.webAccess,
             wikipediaGrounding = p[KEY_WIKIPEDIA] ?: AppSettings.DEFAULT.wikipediaGrounding,
             imageTokens = p[KEY_IMAGE_TOKENS] ?: AppSettings.DEFAULT.imageTokens,
+            showStats = p[KEY_SHOW_STATS] ?: AppSettings.DEFAULT.showStats,
             systemPrompt = p[KEY_SYSTEM_PROMPT] ?: AppSettings.DEFAULT.systemPrompt,
         )
     }
@@ -142,6 +146,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setWebAccess(v: Boolean) = edit { it[KEY_WEB_ACCESS] = v }
     suspend fun setWikipediaGrounding(v: Boolean) = edit { it[KEY_WIKIPEDIA] = v }
     suspend fun setImageTokens(v: Int) = edit { it[KEY_IMAGE_TOKENS] = v.coerceIn(40, 2048) }
+    suspend fun setShowStats(v: Boolean) = edit { it[KEY_SHOW_STATS] = v }
     suspend fun setSystemPrompt(v: String) = edit { it[KEY_SYSTEM_PROMPT] = v }
 
     /** Restores the response-style dials only, leaving model and web settings alone. */
@@ -166,6 +171,7 @@ class SettingsRepository(private val context: Context) {
         val KEY_WEB_ACCESS = booleanPreferencesKey("web_access")
         val KEY_WIKIPEDIA = booleanPreferencesKey("wikipedia_grounding")
         val KEY_IMAGE_TOKENS = intPreferencesKey("image_tokens")
+        val KEY_SHOW_STATS = booleanPreferencesKey("show_stats")
         val KEY_SYSTEM_PROMPT = stringPreferencesKey("system_prompt")
     }
 }

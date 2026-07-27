@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-27 — 0.3.1
+
+- ui — **"Show context and speed" setting**: a line above the composer with `ctx 1240 / 4096 (30%)`, a thin bar, and the last turn's `tok/s`, token count, prompt time and media tokens. The bar turns red past 85%, because a full window ends the conversation and does it silently otherwise
+- jni — `nativeLastTurnStats` returns the timings that were previously only in logcat, as one array rather than four calls that could straddle a turn. Read on the inference thread after every turn, cancelled ones included - a partial answer still spent context and still took time
+- llm — stats clear on a new chat rather than claiming the window is a third full when it is empty
+
 ## 2026-07-27 — 0.3.0
 
 - llm — **image detail setting**, which is the fix for "the text is fragmented" on a photographed page. `clip` scales every image down until it fits a token budget, and llama.cpp caps Gemma 4 at 280 tokens - about 0.6 MP, which puts 10pt body text at 14 px. Downscaling less on our side does nothing, because clip resizes to its budget regardless of what it is handed. The budget itself is now settable: Standard 280, High 600, Maximum 1120 tokens per image

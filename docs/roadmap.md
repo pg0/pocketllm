@@ -208,8 +208,9 @@ Open:
 
 ## 9. Smaller things
 
-- Tokens-per-second and context-usage readout in the UI (the numbers are
-  already logged per turn; they are just not on screen).
+- ~~Tokens-per-second and context-usage readout in the UI~~ - shipped 0.3.1,
+  behind a setting. What is still missing is what to *do* when the bar fills:
+  see section 4.
 - Regenerate / edit-and-resend a turn. `nativeRollbackTurn` already provides
   the hard part; it just has no button.
 - Model-side markdown discipline: the model still emits `![alt](url)` with

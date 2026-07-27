@@ -40,6 +40,9 @@ download, and after that only if you switch web access on.
   open when tapped. Images the model emits as `![alt](url)` are fetched and
   displayed, or fall back to their alt text when the URL turns out to be
   invented. Long press selects text, double tap copies the whole message.
+- **Context and speed on screen**, when switched on in settings: how full the
+  window is, and what the last turn cost in tokens per second. The window
+  filling up is what ends a conversation, and it does that silently otherwise.
 - **Resumable downloads.** A 4 GB fetch over mobile data will get interrupted;
   it resumes from where it stopped.
 

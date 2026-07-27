@@ -50,6 +50,12 @@ struct pll_session {
     llama_pos undo_n_past   = 0;
     bool      undo_valid    = false;
 
+    // Timings of the last turn, for the stats line in the UI.
+    int64_t last_prompt_ms  = 0;
+    int64_t last_decode_ms  = 0;
+    int     last_decoded    = 0;
+    int     last_media_toks = 0;
+
     std::atomic<bool> cancel{false};
 };
 
@@ -359,6 +365,28 @@ JNI_FN(nativeContextSize)(JNIEnv *, jobject, jlong handle) {
     return (s && s->lctx) ? static_cast<jint>(llama_n_ctx(s->lctx)) : 0;
 }
 
+/**
+ * Timings of the last turn as {prompt_ms, decode_ms, decoded_tokens,
+ * media_tokens}.
+ *
+ * One array rather than four calls across the JNI boundary, and one snapshot
+ * rather than four that could straddle a turn.
+ */
+JNIEXPORT jlongArray JNICALL
+JNI_FN(nativeLastTurnStats)(JNIEnv * env, jobject, jlong handle) {
+    auto * s = reinterpret_cast<pll_session *>(handle);
+    jlong values[4] = {0, 0, 0, 0};
+    if (s != nullptr) {
+        values[0] = static_cast<jlong>(s->last_prompt_ms);
+        values[1] = static_cast<jlong>(s->last_decode_ms);
+        values[2] = static_cast<jlong>(s->last_decoded);
+        values[3] = static_cast<jlong>(s->last_media_toks);
+    }
+    jlongArray out = env->NewLongArray(4);
+    if (out != nullptr) env->SetLongArrayRegion(out, 0, 4, values);
+    return out;
+}
+
 JNIEXPORT void JNICALL
 JNI_FN(nativeFree)(JNIEnv *, jobject, jlong handle) {
     auto * s = reinterpret_cast<pll_session *>(handle);
@@ -608,6 +636,15 @@ JNI_FN(nativeGenerate)(JNIEnv * env, jobject, jlong handle,
     llama_sampler_free(smpl);
 
     const int64_t t_decode_ms = now_ms() - t_decode_start;
+
+    // Kept for the UI as well as the log: the same numbers answer "is this
+    // thing slow" and "am I about to run out of context", and the log is not
+    // visible on a phone.
+    s->last_prompt_ms  = t_prompt_ms;
+    s->last_decode_ms  = t_decode_ms;
+    s->last_decoded    = n_decoded;
+    s->last_media_toks = static_cast<int>(n_media_tokens);
+
     // One line per turn, so "it feels slow" can be answered with the stage that
     // actually cost the time instead of a guess.
     LOGI("turn: prompt=%lldms (media prep=%lldms encode+prefill=%lldms, %d media tok) "

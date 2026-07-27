@@ -172,6 +172,15 @@ fun SettingsSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
             )
 
             ToggleRow(
+                label = "Show context and speed",
+                help = "A line above the composer: how full the context window is, and how " +
+                    "fast the last answer came out. The window filling up is what ends a " +
+                    "conversation, and it does that silently otherwise.",
+                checked = settings.showStats,
+                onChange = vm::setShowStats,
+            )
+
+            ToggleRow(
                 label = "Image/voice encoder on GPU",
                 help = "Faster attachment handling where the driver supports it. " +
                     "Turn off if attachments crash.",

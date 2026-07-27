@@ -46,6 +46,28 @@ sealed interface GenChunk {
 }
 
 /**
+ * What the last turn cost, and how full the window is.
+ *
+ * Context used is the number that decides whether the conversation is about to
+ * end; tokens per second is the one that says whether the phone is coping.
+ * Both were already logged per turn, where a phone user cannot see them.
+ */
+data class TurnStats(
+    val contextUsed: Int,
+    val contextSize: Int,
+    val promptMs: Long,
+    val decodeMs: Long,
+    val decodedTokens: Int,
+    val mediaTokens: Int,
+) {
+    val tokensPerSecond: Float
+        get() = if (decodeMs > 0) decodedTokens * 1000f / decodeMs else 0f
+
+    val contextFraction: Float
+        get() = if (contextSize > 0) contextUsed.toFloat() / contextSize else 0f
+}
+
+/**
  * Application-scoped owner of the native session.
  *
  * All native calls are funnelled onto one thread, both because llama.cpp
@@ -81,6 +103,26 @@ class LlmEngine(private val store: ModelStore) {
 
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
+    private val _stats = MutableStateFlow<TurnStats?>(null)
+
+    /** Null until the first turn has finished. */
+    val stats: StateFlow<TurnStats?> = _stats.asStateFlow()
+
+    /** Must run on [worker]: it reads session state the inference thread owns. */
+    private fun refreshStats(h: Long) {
+        if (h == 0L) return
+        val raw = runCatching { LlamaBridge.nativeLastTurnStats(h) }.getOrNull() ?: return
+        if (raw.size < 4) return
+        _stats.value = TurnStats(
+            contextUsed = LlamaBridge.nativeContextUsed(h),
+            contextSize = LlamaBridge.nativeContextSize(h),
+            promptMs = raw[0],
+            decodeMs = raw[1],
+            decodedTokens = raw[2].toInt(),
+            mediaTokens = raw[3].toInt(),
+        )
+    }
 
     init {
         // Backend init is cheap and idempotent; do it before any load is requested.
@@ -243,6 +285,10 @@ class LlmEngine(private val store: ModelStore) {
             } catch (t: Throwable) {
                 trySend(GenChunk.Error(t.message ?: "generation failed"))
             } finally {
+                // Read on the worker thread while the session is still ours,
+                // and after a cancelled turn too - a partial answer still used
+                // context and still took time.
+                refreshStats(h)
                 _busy.value = false
                 close()
             }
@@ -277,6 +323,9 @@ class LlmEngine(private val store: ModelStore) {
         withContext(worker) {
             LlamaBridge.nativeResetChat(h)
             appliedSystemPrompt = null
+            // A new chat has spent nothing yet; leaving the old numbers up
+            // would say the window is half full when it is empty.
+            _stats.value = null
         }
     }
 
