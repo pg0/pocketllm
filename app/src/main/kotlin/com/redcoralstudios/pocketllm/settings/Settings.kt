@@ -51,7 +51,11 @@ data class AppSettings(
             autoLoad = true,
             projectorOnGpu = false,
             webAccess = false,
-            wikipediaGrounding = true,
+            // Off by default and toggled from the + menu next to web search:
+            // a lookup that happens on its own is one nobody asked for, and it
+            // spends context on an article that may have nothing to do with
+            // the question.
+            wikipediaGrounding = false,
             systemPrompt = "",
         )
     }

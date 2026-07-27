@@ -154,18 +154,18 @@ fun SettingsSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
             ToggleRow(
                 label = "Web access",
                 help = "Off means a conversation never touches the network. On, a link in " +
-                    "your message gets fetched and read, and the globe button searches " +
-                    "DuckDuckGo for that one message. Your text is sent to those sites.",
+                    "your message gets fetched and read, and the two sources in the + menu " +
+                    "become available. Your text is sent to those sites.",
                 checked = settings.webAccess,
                 onChange = vm::setWebAccess,
             )
 
             ToggleRow(
                 label = "Wikipedia grounding",
-                help = "For fact-shaped questions, fetch the matching Wikipedia article " +
-                    "and rank it above every other source. English article first - it is " +
-                    "usually longer and better cited - and the answer comes back in the " +
-                    "language you asked in. Needs web access on.",
+                help = "Same switch as Wikipedia in the + menu. On, a fact-shaped question " +
+                    "fetches the matching article and ranks it above every other source. " +
+                    "English article first - it is usually longer and better cited - and " +
+                    "the answer comes back in the language you asked in. Needs web access.",
                 checked = settings.wikipediaGrounding,
                 onChange = vm::setWikipediaGrounding,
             )

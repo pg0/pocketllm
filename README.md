@@ -28,9 +28,9 @@ download, and after that only if you switch web access on.
 - **Two dials**, creativity and fact-checking, described below, plus an
   editable system prompt for when the dials are not enough.
 - **Web access, off by default.** Turn it on and a link in your message gets
-  fetched and read, Wikipedia is consulted for questions about the world, and
-  the web-search item in the `+` menu adds a DuckDuckGo search. The URLs
-  actually read are listed under the answer.
+  fetched and read, and the `+` menu offers two sources to check: DuckDuckGo
+  search and Wikipedia. Both are off until you check them. The URLs actually
+  read are listed under the answer.
 - **Markdown answers.** Headings, lists, tables, code blocks, and links that
   open when tapped. Images the model emits as `![alt](url)` are fetched and
   displayed, or fall back to their alt text when the URL turns out to be
@@ -68,8 +68,10 @@ With it on:
 - A `http(s)://` link in your message is fetched, stripped to text and fed in as
   the primary source. Bare domains are ignored on purpose - "I like example.com"
   is prose, not an instruction.
-- **Wikipedia** is consulted for questions that are actually about the world,
-  and ranked above everything else. It gets its own path rather than going
+- **Wikipedia**, when checked in the `+` menu, is consulted for questions that
+  are actually about the world, and ranked above everything else. It is off
+  until checked - a lookup nobody asked for spends context on an article that
+  may have nothing to do with the question. It gets its own path rather than going
   through search because it offers a real keyless JSON API: one curated, citable
   article beats five snippets from arbitrary sites. English is tried first
   because those articles are longer and better cited; the model is told to
@@ -92,9 +94,9 @@ With it on:
   for until the model has seen the image anyway. A hand-typed URL still gets
   read; it is an instruction rather than a guess.
 
-The Wikipedia setting means what it says: with it on, the app tries to look
-things up; with it off it never does. The only messages skipped are ones no
-article could answer - "write me a poem", "count these", "translate this".
+The Wikipedia toggle means what it says: checked, the app tries to look things
+up; unchecked, it never does. The only messages skipped while it is on are ones
+no article could answer - "write me a poem", "count these", "translate this".
 
 Relevance is enforced on what comes *back*, not by guessing in advance which
 questions deserve an article. Wikipedia's search endpoint never says "no match",

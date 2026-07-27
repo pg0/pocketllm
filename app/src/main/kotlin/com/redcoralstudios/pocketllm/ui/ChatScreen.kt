@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
@@ -218,6 +219,8 @@ fun ChatScreen(vm: ChatViewModel) {
                 webAccess = settings.webAccess,
                 searchArmed = searchArmed,
                 onToggleSearch = vm::toggleSearchArmed,
+                wikipedia = settings.wikipediaGrounding,
+                onToggleWikipedia = vm::toggleWikipedia,
                 enabled = engineState is EngineState.Ready,
                 onSend = { vm.send() },
                 onStop = vm::stopGeneration,
@@ -444,6 +447,53 @@ private fun MessageBubble(message: ChatMessage) {
     }
 }
 
+/**
+ * A retrieval source in the + menu: checked means it will be used, unchecked
+ * means it will not. Neither is consulted on its own any more - a lookup
+ * nobody asked for spends context on an article that may have nothing to do
+ * with the question.
+ */
+@Composable
+private fun SourceToggleItem(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    on: Boolean,
+    webAccess: Boolean,
+    onClick: () -> Unit,
+) {
+    val active = on && webAccess
+    DropdownMenuItem(
+        text = { Text(label) },
+        // Both need the network, so with web access off they are shown
+        // disabled and say why rather than disappearing.
+        enabled = webAccess,
+        leadingIcon = {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (active) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+            )
+        },
+        trailingIcon = {
+            when {
+                !webAccess -> Text(
+                    "needs web access",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+
+                active -> Icon(
+                    Icons.Default.Check,
+                    contentDescription = "on",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+
+                else -> Unit
+            }
+        },
+        onClick = onClick,
+    )
+}
+
 @Composable
 private fun InputRow(
     input: TextFieldValue,
@@ -453,6 +503,8 @@ private fun InputRow(
     webAccess: Boolean,
     searchArmed: Boolean,
     onToggleSearch: () -> Unit,
+    wikipedia: Boolean,
+    onToggleWikipedia: () -> Unit,
     enabled: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
@@ -475,13 +527,13 @@ private fun InputRow(
     ) {
         Box {
             IconButton(onClick = { showAttachMenu = true }, enabled = enabled && !busy) {
-                // Tinted while search is armed. The globe is behind the menu
-                // now, and a setting you cannot see is a setting that surprises
-                // you three messages later.
-                val armed = webAccess && searchArmed
+                // Tinted while a source is on. They are behind the menu now,
+                // and a setting you cannot see is a setting that surprises you
+                // three messages later.
+                val armed = webAccess && (searchArmed || wikipedia)
                 Icon(
                     Icons.Default.Add,
-                    contentDescription = if (armed) "Attach - web search is on" else "Attach",
+                    contentDescription = if (armed) "Attach - a web source is on" else "Attach",
                     tint = if (armed) MaterialTheme.colorScheme.primary
                     else LocalContentColor.current,
                 )
@@ -503,37 +555,22 @@ private fun InputRow(
 
                 HorizontalDivider()
 
-                // Web search lives in the menu rather than in the row: it is a
-                // toggle, not a thing you press every message, and every icon
-                // out here comes straight off the width of the text field.
-                DropdownMenuItem(
-                    text = { Text("Web search") },
-                    enabled = webAccess,
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Public,
-                            contentDescription = null,
-                            tint = if (searchArmed && webAccess) MaterialTheme.colorScheme.primary
-                            else LocalContentColor.current,
-                        )
-                    },
-                    trailingIcon = {
-                        when {
-                            !webAccess -> Text(
-                                "off in settings",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-
-                            searchArmed -> Icon(
-                                Icons.Default.Check,
-                                contentDescription = "on",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-
-                            else -> Unit
-                        }
-                    },
+                // The two sources live in the menu rather than in the row: they
+                // are toggles, not things you press every message, and every
+                // icon out here comes straight off the width of the text field.
+                SourceToggleItem(
+                    label = "Web search",
+                    icon = Icons.Default.Public,
+                    on = searchArmed,
+                    webAccess = webAccess,
                     onClick = { showAttachMenu = false; onToggleSearch() },
+                )
+                SourceToggleItem(
+                    label = "Wikipedia",
+                    icon = Icons.AutoMirrored.Filled.MenuBook,
+                    on = wikipedia,
+                    webAccess = webAccess,
+                    onClick = { showAttachMenu = false; onToggleWikipedia() },
                 )
             }
         }

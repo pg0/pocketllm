@@ -548,6 +548,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun setWikipediaGrounding(v: Boolean) =
         viewModelScope.launch { container.settings.setWikipediaGrounding(v) }
 
+    /**
+     * Same switch as in the settings sheet, reachable from the + menu.
+     *
+     * One flag rather than a second per-message one: Wikipedia is a source you
+     * want on or off for a stretch of conversation, not something to re-arm
+     * every message, and two places disagreeing about whether it is on would be
+     * worse than either.
+     */
+    fun toggleWikipedia() {
+        if (settings.value.webAccess) setWikipediaGrounding(!settings.value.wikipediaGrounding)
+    }
+
     fun setSystemPrompt(v: String) =
         viewModelScope.launch { container.settings.setSystemPrompt(v) }
 

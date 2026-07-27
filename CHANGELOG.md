@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-27 — 0.1.8
+
+- ui — **Wikipedia is a checkbox in the + menu**, next to web search, and it is **off by default**. It was consulted automatically for anything fact-shaped, which is a lookup nobody asked for, spending context on an article that may have nothing to do with the question. Both sources now have to be checked
+- ui — the menu item drives the same persisted flag as the settings sheet rather than a second per-message one: a source is something you want on for a stretch of conversation, and two switches disagreeing about whether Wikipedia is on would be worse than either. With web access off both are shown disabled and say "needs web access" instead of vanishing
+
 ## 2026-07-27 — 0.1.7
 
 - net — FIX retrieval running on messages that are about an attachment: "classify this flower" sent the app to Wikipedia and a search *before* the model had seen the picture. That text names nothing lookupable, so it returns an unrelated article and spends the context the image needs. With an attachment present, automatic Wikipedia, automatic time-sensitive search, the armed search toggle and the retry-with-search pass are all off. A URL typed by hand still gets read - that is an instruction, not a guess
