@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-27 — 0.4.2
+
+- ui — **"Unload model from memory"** in settings. There was no way to give the RAM back short of killing the app, and closing the app does not reliably do it: Android keeps the process cached until something else needs the memory. The conversation goes with the model, because the KV cache is what it remembers
+- app — **the model is now unloaded under memory pressure** instead of the process being killed. `onTrimMemory(TRIM_MEMORY_COMPLETE)` means the app is next in the kill queue, and the model is most of what makes it worth killing - so it trades a reload for keeping the app, the settings and the activity alive. Nothing happens at lighter levels; unloading on every backgrounding would make every return a twenty-second wait. Skipped mid-generation
+- llm — new `Unloaded` engine state, separate from `Idle`: Idle is the flicker before the model loads on launch, Unloaded persists, so it needs a card and a Load button rather than a header that says "starting" forever
+- llm — generation re-reads the session handle on the worker thread instead of trusting the one captured when the flow was built, and cancellation reads the live field. An unload queued between those two points would otherwise have been a use-after-free
+- measured on a Galaxy S23 Ultra, same pid before and after: PSS 3.76 GB → 118 MB, native heap 2.15 GB → 6 MB
+
 ## 2026-07-27 — 0.4.1
 
 - ui — **memory readout in settings**, under the model list: what the app is using (with the native-heap and code split), what the phone is using of its total, and how much is free. Refreshes every two seconds while the sheet is open and stops when it closes

@@ -795,6 +795,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Hands the model's memory back without leaving the app.
+     *
+     * The conversation goes with it: the KV cache is what the model remembers,
+     * and keeping the messages on screen after dropping it would show a history
+     * the model can no longer see.
+     */
+    fun unloadModel() {
+        viewModelScope.launch {
+            stopGeneration()
+            container.engine.unload(byUser = true)
+            _messages.value = emptyList()
+        }
+    }
+
     fun isDownloaded(spec: ModelSpec): Boolean = container.modelStore.isReady(spec)
     fun hasProjector(spec: ModelSpec): Boolean = container.modelStore.hasProjector(spec)
 

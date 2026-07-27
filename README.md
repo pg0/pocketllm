@@ -231,6 +231,20 @@ It is stored on the device and sent to huggingface.co only.
 Each row says whether the model fits: weights are memory-mapped, so one that is
 too large does not fail cleanly, it thrashes or gets the app killed mid-answer.
 
+**Unload model from memory** gives the RAM back without leaving the app. Closing
+the app does not reliably do it - Android keeps the process cached until
+something else needs the memory, and a cached PocketLLM is a 4 GB process. The
+conversation is cleared along with it, because the KV cache is what the model
+remembers of it.
+
+The app also unloads itself at `TRIM_MEMORY_COMPLETE`, which is Android saying
+this process is next to be killed. Since the model is most of what makes it
+worth killing, dropping it trades a twenty-second reload for keeping the app,
+the settings and the activity alive - being killed costs that reload *plus*
+everything else. Nothing happens at lighter trim levels, and never mid-answer.
+Measured on a Galaxy S23 Ultra, same process before and after: PSS 3.76 GB →
+118 MB, native heap 2.15 GB → 6 MB.
+
 Under the list is a **live memory readout** - what the app holds, what the phone
 holds of its total, what is free - refreshing while the sheet is open. That row
 warning is an estimate made from a file size; this is the measurement standing

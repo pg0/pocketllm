@@ -24,6 +24,15 @@ sealed interface EngineState {
     /** Nothing loaded yet. */
     data object Idle : EngineState
 
+    /**
+     * Deliberately unloaded, either by the user or under memory pressure.
+     *
+     * Distinct from [Idle] because the two want opposite things on screen: Idle
+     * is the flicker before the model loads on launch, and Unloaded is a state
+     * the app will sit in until someone asks for the model back.
+     */
+    data class Unloaded(val freedBytes: Long, val byUser: Boolean) : EngineState
+
     /** The configured model is not on disk. The UI routes to the downloader. */
     data object MissingFiles : EngineState
 
@@ -245,8 +254,9 @@ class LlmEngine(private val store: ModelStore) {
         /** Overrides the dial-generated prompt when the user wrote their own. */
         systemOverride: String? = null,
     ): Flow<GenChunk> = callbackFlow {
-        val h = handle
-        if (h == 0L) {
+        // Early exit so the caller does not build a prompt for a model that is
+        // not there. The authoritative check is on the worker thread below.
+        if (handle == 0L) {
             trySend(GenChunk.Error("No model loaded"))
             close()
             return@callbackFlow
@@ -276,10 +286,18 @@ class LlmEngine(private val store: ModelStore) {
         appliedSystemPrompt = system
 
         val job = launch(worker) {
+            // Re-read on the worker rather than trusting the handle captured
+            // above: an unload can be queued between the two, and the worker
+            // runs serially, so by the time this body starts the session may
+            // already be freed.
+            if (handle == 0L) {
+                trySend(GenChunk.Error("No model loaded"))
+                return@launch
+            }
             _busy.value = true
             try {
                 val result = LlamaBridge.nativeGenerate(
-                    handle = h,
+                    handle = handle,
                     user = text,
                     media = mediaPaths.toTypedArray(),
                     system = system,
@@ -303,7 +321,7 @@ class LlmEngine(private val store: ModelStore) {
                 // Read on the worker thread while the session is still ours,
                 // and after a cancelled turn too - a partial answer still used
                 // context and still took time.
-                refreshStats(h)
+                refreshStats(handle)
                 _busy.value = false
                 close()
             }
@@ -311,7 +329,11 @@ class LlmEngine(private val store: ModelStore) {
 
         awaitClose {
             // Thread-safe by contract; unblocks the worker if it is mid-decode.
-            if (job.isActive) LlamaBridge.nativeCancel(h)
+            // Read the field rather than a captured copy: a zero here means the
+            // session was freed already, and cancelling it would be a
+            // use-after-free rather than a no-op.
+            val live = handle
+            if (live != 0L && job.isActive) LlamaBridge.nativeCancel(live)
         }
     }
 
@@ -355,6 +377,38 @@ class LlmEngine(private val store: ModelStore) {
     suspend fun release() = lock.withLock {
         withContext(worker) { releaseLocked() }
         _state.value = EngineState.Idle
+    }
+
+    /**
+     * Frees the model and says so, rather than leaving the app looking like it
+     * is still starting up.
+     *
+     * [freedBytes] is the size of the files that were resident, which is what
+     * the user asked to get back. It is not measured after the fact: the pages
+     * are returned to the kernel lazily and a reading taken here would show
+     * almost nothing freed yet.
+     */
+    suspend fun unload(byUser: Boolean) = lock.withLock {
+        val freed = loadedSpec?.let { spec ->
+            spec.weights.sizeBytes + if (projectorLoaded) (spec.projector?.sizeBytes ?: 0L) else 0L
+        } ?: 0L
+
+        withContext(worker) { releaseLocked() }
+        _state.value = EngineState.Unloaded(freedBytes = freed, byUser = byUser)
+        Log.i(TAG, "unloaded (byUser=$byUser), ~${freed / (1L shl 20)} MB of mappings dropped")
+    }
+
+    /**
+     * Unloads only if nothing is being generated.
+     *
+     * The memory-pressure path: dropping the model mid-answer would abort the
+     * turn to save memory the system asked for a moment too late anyway.
+     * Returns false when it declined.
+     */
+    suspend fun unloadIfIdle(): Boolean {
+        if (handle == 0L || _busy.value) return false
+        unload(byUser = false)
+        return true
     }
 
     private fun releaseLocked() {

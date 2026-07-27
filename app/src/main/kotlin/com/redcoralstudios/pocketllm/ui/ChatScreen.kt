@@ -79,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redcoralstudios.pocketllm.llm.EngineState
+import com.redcoralstudios.pocketllm.settings.MemoryUsage
 import com.redcoralstudios.pocketllm.llm.TurnStats
 import com.redcoralstudios.pocketllm.media.DocumentImport
 import com.redcoralstudios.pocketllm.media.PendingDocument
@@ -172,6 +173,7 @@ fun ChatScreen(vm: ChatViewModel) {
                 is EngineState.Loading -> LoadingBar(s.progress)
                 is EngineState.MissingFiles -> ModelSetupCard(vm, download)
                 is EngineState.Failed -> ErrorCard(s.message, vm::retryLoad)
+                is EngineState.Unloaded -> UnloadedCard(s, vm::retryLoad)
                 else -> Unit
             }
 
@@ -334,6 +336,7 @@ private fun StatusTitle(state: EngineState) {
         is EngineState.Loading -> "Loading model" to "${(state.progress * 100).toInt()}%"
         is EngineState.MissingFiles -> "PocketLLM" to "model not downloaded"
         is EngineState.Failed -> "PocketLLM" to "load failed"
+        is EngineState.Unloaded -> "PocketLLM" to "model unloaded"
         EngineState.Idle -> "PocketLLM" to "starting"
     }
     Column {
@@ -380,6 +383,43 @@ private fun ModelSetupCard(vm: ChatViewModel, download: DownloadState) {
             } else {
                 Button(onClick = { vm.downloadModel() }) { Text("Download") }
             }
+        }
+    }
+}
+
+/**
+ * Shown after the model has been given back, by the user or by the system.
+ *
+ * Idle shows nothing because it lasts a fraction of a second on launch. This one
+ * persists until someone asks for the model back, so it has to carry the button
+ * that does it - otherwise "unload" is a one-way door out of a chat app.
+ */
+@Composable
+private fun UnloadedCard(state: EngineState.Unloaded, onLoad: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().padding(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                buildString {
+                    append(
+                        if (state.byUser) "Model unloaded"
+                        else "The system was low on memory, so the model was unloaded"
+                    )
+                    if (state.freedBytes > 0) {
+                        append(" - ")
+                        append(MemoryUsage.format(state.freedBytes))
+                        append(" given back")
+                    }
+                    append(". Loading it again takes a few seconds.")
+                },
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            TextButton(onClick = onLoad) { Text("Load") }
         }
     }
 }

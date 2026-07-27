@@ -106,6 +106,18 @@ fun ModelSection(vm: ChatViewModel, selectedId: String) {
         TextButton(onClick = { vm.downloadModel(active) }) { Text("Download / repair") }
         TextButton(onClick = { vm.deleteModel(active) }) { Text("Delete files") }
     }
+    // Only offered when there is something to unload. Otherwise the button
+    // would claim to free memory that is not currently held.
+    if (engine is EngineState.Ready) {
+        TextButton(onClick = vm::unloadModel) { Text("Unload model from memory") }
+        Text(
+            "Frees the RAM without leaving the app, and clears the conversation - " +
+                "the model's memory of it lives in the same allocation. Closing the " +
+                "app does not reliably do this: Android keeps the process cached " +
+                "until something else needs the RAM.",
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
 
     if (adding) {
         AddModelDialog(vm = vm, onDismiss = { adding = false; vm.clearRepo() })
