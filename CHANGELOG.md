@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-27 — 0.1.5
+
+- ui — message text is selectable (long press) and double tap copies the whole message
+- ui — replaced the deprecated `ClickableText` with `Text` plus an explicit tap detector. Necessary, not cosmetic: Compose delivers taps to the innermost hit node first and the text's own detector consumes them, so a double-tap handler on the enclosing bubble only ever fired on the padding. Single tap opens a link, double tap copies, long press is left unhandled so `SelectionContainer` can start a selection
+
+## 2026-07-27 — 0.1.4
+
+- net — the Wikipedia toggle now means what it says: on = try to look it up, off = never. The gate is a narrow exclusion (work meant for the model: write, translate, count, summarise) rather than a guess at which questions deserve an article. Relevance is enforced on what comes back via the title check, which is a better filter than predicting what will come back
+- tests — `looksFactual` replaced by `worthLookingUp`
+
 ## 2026-07-27 — 0.1.3
 
 - llm — **the model now knows what day it is.** A local model has no clock, only a training cutoff, so it called a 2026 event upcoming with complete confidence. No fact-checking prompt can catch that, because the model has no way to know it is wrong. Every system prompt now carries the date, a custom one included

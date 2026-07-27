@@ -1,6 +1,7 @@
 package com.redcoralstudios.pocketllm.ui
 
 import android.Manifest
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,8 +21,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -59,6 +62,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -349,6 +356,15 @@ private fun MessageBubble(message: ChatMessage) {
         isUser -> MaterialTheme.colorScheme.primaryContainer
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val copyAll = {
+        if (message.text.isNotBlank()) {
+            clipboard.setText(AnnotatedString(message.text))
+            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
@@ -360,7 +376,13 @@ private fun MessageBubble(message: ChatMessage) {
                 bottomStart = if (isUser) 16.dp else 4.dp,
                 bottomEnd = if (isUser) 4.dp else 16.dp,
             ),
-            modifier = Modifier.widthIn(max = 320.dp),
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                // Catches double taps on the padding and around the text. The
+                // text itself carries its own handler - see InlineText.
+                .pointerInput(message.text) {
+                    detectTapGestures(onDoubleTap = { copyAll() })
+                },
         ) {
             Column(Modifier.padding(12.dp)) {
                 // What was sent, shown as what it was: the picture itself for
@@ -378,21 +400,27 @@ private fun MessageBubble(message: ChatMessage) {
                         Spacer(Modifier.height(4.dp))
                     }
                 }
-                // User text is shown verbatim: it is what they typed, not
-                // markdown, and asterisks in a question should stay asterisks.
-                if (isUser || message.isError) {
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                } else if (message.text.isNotEmpty()) {
-                    MarkdownText(
-                        text = message.text,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else if (message.streaming) {
-                    Text("...", style = MaterialTheme.typography.bodyMedium)
+                // SelectionContainer gives long-press selection with the normal
+                // Android handles. It leaves single taps alone, so links inside
+                // the markdown still open.
+                SelectionContainer {
+                    // User text is shown verbatim: it is what they typed, not
+                    // markdown, and asterisks in a question stay asterisks.
+                    if (isUser || message.isError) {
+                        Text(
+                            text = message.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    } else if (message.text.isNotEmpty()) {
+                        MarkdownText(
+                            text = message.text,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onDoubleTap = copyAll,
+                        )
+                    } else if (message.streaming) {
+                        Text("...", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
 
                 if (message.image != null) {

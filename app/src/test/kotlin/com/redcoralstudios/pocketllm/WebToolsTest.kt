@@ -76,33 +76,30 @@ class WebToolsTest {
     // ------------------------------------------------------- grounding gate
 
     @Test
-    fun `does not ground a plain task request`() {
+    fun `does not look up work that is meant for the model`() {
         // The bug this pins: "count people" used to trip a Wikipedia lookup.
-        assertFalse(WebTools.looksFactual("count people"))
-        assertFalse(WebTools.looksFactual("count the people in this list"))
-        assertFalse(WebTools.looksFactual("write me a poem about the sea"))
-        assertFalse(WebTools.looksFactual("translate this to German"))
-        assertFalse(WebTools.looksFactual("summarize the text above"))
+        assertFalse(WebTools.worthLookingUp("count people"))
+        assertFalse(WebTools.worthLookingUp("count the people in this list"))
+        assertFalse(WebTools.worthLookingUp("write me a poem about the sea"))
+        assertFalse(WebTools.worthLookingUp("translate this to German"))
+        assertFalse(WebTools.worthLookingUp("summarize the text above"))
+        assertFalse(WebTools.worthLookingUp("schreibe mir ein Gedicht"))
     }
 
     @Test
-    fun `does not ground a question that is not about the world`() {
-        assertFalse(WebTools.looksFactual("how many r are in strawberry?"))
-        assertFalse(WebTools.looksFactual("what should i cook tonight?"))
+    fun `looks up anything else once grounding is on`() {
+        // The setting means "try to find it online". Relevance is enforced on
+        // what comes back, not by guessing here.
+        assertTrue(WebTools.worthLookingUp("who was Nikola Tesla"))
+        assertTrue(WebTools.worthLookingUp("wer hat die WM2026 gewonnen?"))
+        assertTrue(WebTools.worthLookingUp("tell me about quantum tunnelling"))
+        assertTrue(WebTools.worthLookingUp("the Ariane 6 launcher"))
     }
 
     @Test
-    fun `grounds an entity question`() {
-        assertTrue(WebTools.looksFactual("who was Nikola Tesla"))
-        assertTrue(WebTools.looksFactual("what is the Ariane 6"))
-        assertTrue(WebTools.looksFactual("tell me about quantum tunnelling"))
-        assertTrue(WebTools.looksFactual("wer ist Angela Merkel"))
-    }
-
-    @Test
-    fun `grounds a proper name but not a capitalised sentence start`() {
-        assertTrue(WebTools.looksFactual("I read about Marie Curie yesterday"))
-        assertFalse(WebTools.looksFactual("Please do that again"))
+    fun `ignores messages too short to be a query`() {
+        assertFalse(WebTools.worthLookingUp("ok"))
+        assertFalse(WebTools.worthLookingUp("thx"))
     }
 
     @Test

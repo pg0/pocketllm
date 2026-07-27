@@ -35,7 +35,7 @@ download, and after that only if you switch web access on.
 - **Markdown answers.** Headings, lists, tables, code blocks, and links that
   open when tapped. Images the model emits as `![alt](url)` are fetched and
   displayed, or fall back to their alt text when the URL turns out to be
-  invented.
+  invented. Long press selects text, double tap copies the whole message.
 - **Resumable downloads.** A 4 GB fetch over mobile data will get interrupted;
   it resumes from where it stopped.
 
@@ -87,15 +87,16 @@ With it on:
   asked again with search results. The rollback matters: a retry stacked
   underneath the model's own refusal tends to get agreed with.
 
-The Wikipedia gate is deliberately biased towards **not** looking things up. A
-needless lookup costs a round-trip on every message and drags an irrelevant
-article into the prompt, which is worse than no grounding at all. So bare
-interrogatives and a trailing question mark are not enough - "count people" and
-"how many r in strawberry?" are questions, and an encyclopedia cannot help with
-either. It wants an entity-shaped question or a proper name. On top of that,
-because Wikipedia's search endpoint always returns its best guess rather than
-admitting no match, a returned article whose title shares no word with the query
-is thrown away.
+The Wikipedia setting means what it says: with it on, the app tries to look
+things up; with it off it never does. The only messages skipped are ones no
+article could answer - "write me a poem", "count these", "translate this".
+
+Relevance is enforced on what comes *back*, not by guessing in advance which
+questions deserve an article. Wikipedia's search endpoint never says "no match",
+it always returns its best guess, so a returned article whose title shares no
+word with the query is thrown away. That is a better filter than trying to
+predict the result, and it is why "count people" no longer drags an unrelated
+article into the prompt.
 
 No API key, account or self-hosted service: it uses DuckDuckGo's plain-HTML
 endpoint and a hand-rolled HTML-to-text pass. The trade-off is that scraping can

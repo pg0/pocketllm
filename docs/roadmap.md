@@ -186,8 +186,8 @@ languages in use, and weigh it against a 150-570 MB second model.
 
 - Tokens-per-second and context-usage readout in the UI (the numbers are
   already logged per turn; they are just not on screen).
-- Text selection in message bubbles. `ClickableText` consumes taps, so
-  selection and tappable links currently cannot coexist without more work.
+- Regenerate / edit-and-resend a turn. `nativeRollbackTurn` already provides
+  the hard part; it just has no button.
 - Model-side markdown discipline: the model still emits `![alt](url)` with
   invented URLs, which renders as "[image unavailable]". A system-prompt line
   telling it not to fabricate image links would be cheaper than any renderer

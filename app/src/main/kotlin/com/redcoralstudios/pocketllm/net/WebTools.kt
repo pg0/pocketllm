@@ -395,26 +395,6 @@ class WebTools {
             "PocketLLM/0.1 (Android; https://github.com/pg0) okhttp"
 
         /**
-         * Openers that ask *about a thing in the world*, which is the only case
-         * an encyclopedia can help with.
-         *
-         * Bare interrogatives are deliberately absent. "what", "how many" and a
-         * trailing question mark match almost every message ever typed at a
-         * chatbot -- "how many r in strawberry?" is a question, and looking it
-         * up on Wikipedia is pure latency.
-         */
-        private val ENTITY_QUESTION = Regex(
-            """^\s*(who|what|which)\s+(is|are|was|were)\b""" +
-                """|^\s*(when|where)\s+(is|are|was|were|did|does)\b""" +
-                """|^\s*(tell|talk)\s+me\s+about\b""" +
-                """|^\s*(wer|was|welche[rsn]?)\s+(ist|sind|war|waren)\b""" +
-                """|^\s*(wann|wo)\s+(ist|war|wurde|hat)\b""" +
-                """|^\s*(erzähl|erzähle)\s+mir\b""" +
-                """|\b(biography|biografie|lebenslauf|geboren|born in)\b""",
-            RegexOption.IGNORE_CASE,
-        )
-
-        /**
          * Imperatives that are work *for* the model, not questions about the
          * world. These never get grounded, however capitalised their arguments.
          */
@@ -427,25 +407,24 @@ class WebTools {
             RegexOption.IGNORE_CASE,
         )
 
-        /** Two or more adjacent capitalised words, e.g. "Nikola Tesla". */
-        private val PROPER_NAME = Regex("""\p{Lu}\p{L}+(\s+(von|van|de|der|di|of|the))?\s+\p{Lu}\p{L}+""")
-
         /**
-         * Gate for Wikipedia grounding.
+         * Whether a message is worth an encyclopedia lookup.
          *
-         * Biased towards *not* looking things up. A needless lookup costs a
-         * round-trip on every message and drags an irrelevant article into the
-         * prompt, which is worse than no grounding at all -- so this wants a
-         * real signal: an entity-shaped question, or a proper name.
+         * The setting means what it says: with Wikipedia grounding on, the app
+         * tries to look things up. So this is a *narrow exclusion*, not a
+         * permission check -- only messages that are plainly work for the model
+         * ("write me a poem", "count these", "translate this") are skipped,
+         * because no article can help with those.
+         *
+         * Everything else attempts the lookup. Relevance is enforced afterwards
+         * by [titleMatchesQuery] rather than by guessing here: Wikipedia's
+         * search always returns *something*, and checking what actually came
+         * back is a better filter than trying to predict what will.
          */
-        fun looksFactual(text: String): Boolean {
+        fun worthLookingUp(text: String): Boolean {
             val t = text.trim()
-            if (t.length < 8) return false
-            if (TASK_VERB.containsMatchIn(t)) return false
-            if (ENTITY_QUESTION.containsMatchIn(t)) return true
-            // A multi-word proper name is the other reliable signal. A single
-            // capitalised word is not: sentences start with one.
-            return PROPER_NAME.containsMatchIn(t)
+            if (t.length < 6) return false
+            return !TASK_VERB.containsMatchIn(t)
         }
 
         /**

@@ -1,6 +1,7 @@
 package com.redcoralstudios.pocketllm.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,17 +11,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -250,29 +255,47 @@ private fun inlineOf(text: String, linkColor: Color): AnnotatedString =
 
 // ----------------------------------------------------------------- rendering
 
-/** A run of inline markdown whose links open in the browser when tapped. */
+/**
+ * A run of inline markdown: single tap opens a link, double tap is passed up.
+ *
+ * Both gestures are handled on this node rather than on the bubble around it.
+ * A parent's `detectTapGestures` never sees these taps - Compose delivers to
+ * the innermost hit node first, and the tap detector here consumes the down
+ * event, so a double-tap handler on the enclosing Surface would only fire on
+ * the padding.
+ *
+ * Long press is deliberately not handled, which is what lets the surrounding
+ * SelectionContainer start a text selection.
+ */
 @Composable
 private fun InlineText(
     text: String,
     style: TextStyle,
     color: Color,
     modifier: Modifier = Modifier,
+    onDoubleTap: (() -> Unit)? = null,
 ) {
     val linkColor = MaterialTheme.colorScheme.primary
     val annotated = remember(text, linkColor) { inlineOf(text, linkColor) }
     val uriHandler = LocalUriHandler.current
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
 
-    // ClickableText does not inherit the ambient content colour the way Text
-    // does, so the base colour has to be folded into the style here.
-    ClickableText(
+    Text(
         text = annotated,
-        modifier = modifier,
-        style = style.copy(color = color),
-        onClick = { offset ->
-            annotated.getStringAnnotations(URL_TAG, offset, offset)
-                .firstOrNull()
-                ?.let { runCatching { uriHandler.openUri(it.item) } }
+        modifier = modifier.pointerInput(annotated, onDoubleTap) {
+            detectTapGestures(
+                onDoubleTap = onDoubleTap?.let { callback -> { callback() } },
+                onTap = { position ->
+                    val result = layout ?: return@detectTapGestures
+                    val offset = result.getOffsetForPosition(position)
+                    annotated.getStringAnnotations(URL_TAG, offset, offset)
+                        .firstOrNull()
+                        ?.let { runCatching { uriHandler.openUri(it.item) } }
+                },
+            )
         },
+        style = style.copy(color = color),
+        onTextLayout = { layout = it },
     )
 }
 
@@ -282,6 +305,8 @@ fun MarkdownText(
     color: Color,
     modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.bodyMedium,
+    /** Invoked on a double tap anywhere in the rendered text. */
+    onDoubleTap: (() -> Unit)? = null,
 ) {
     val blocks = remember(text) { parseBlocks(text) }
     val muted = color.copy(alpha = 0.7f)
@@ -290,7 +315,7 @@ fun MarkdownText(
         blocks.forEachIndexed { index, block ->
             if (index > 0) Box(Modifier.padding(top = 4.dp))
             when (block) {
-                is MdBlock.Paragraph -> InlineText(block.text, style, color)
+                is MdBlock.Paragraph -> InlineText(block.text, style, color, onDoubleTap = onDoubleTap)
 
                 is MdBlock.Heading -> InlineText(
                     text = block.text,
@@ -304,6 +329,7 @@ fun MarkdownText(
                         },
                     ),
                     color = color,
+                    onDoubleTap = onDoubleTap,
                 )
 
                 is MdBlock.ListItem -> Row(
@@ -315,7 +341,7 @@ fun MarkdownText(
                         color = color,
                         modifier = Modifier.width(if (block.bullet == "•") 14.dp else 22.dp),
                     )
-                    InlineText(block.text, style, color, Modifier.weight(1f))
+                    InlineText(block.text, style, color, Modifier.weight(1f), onDoubleTap)
                 }
 
                 is MdBlock.Quote -> Row {

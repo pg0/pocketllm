@@ -55,7 +55,9 @@ class WebAugmenter(val tools: WebTools = WebTools()) {
         val wantsImage = WebTools.looksLikeImageRequest(userText)
         val query = if (wantsImage) WebTools.imageSubject(userText) else userText
 
-        val wiki = if (wikipediaGrounding && (wantsImage || WebTools.looksFactual(userText))) {
+        // The toggle is the decision. With grounding on the app looks things up;
+        // the only messages skipped are ones no article could answer.
+        val wiki = if (wikipediaGrounding && (wantsImage || WebTools.worthLookingUp(userText))) {
             tools.wikipedia(query, fallbackLang)
         } else {
             null
