@@ -328,26 +328,42 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 // Retrieval happens before generation, so the model never has to
                 // decide mid-answer whether to reach for the network.
                 val urls = WebTools.extractUrls(trimmed)
-                val timeSensitive = WebTools.looksTimeSensitive(trimmed)
+
+                // An attachment makes the message a question *about* that
+                // attachment, and its text is not a query for anything:
+                // "classify this flower" names no flower, and nothing can be
+                // looked up until the model has seen the picture. Retrieval on
+                // it returns an unrelated article and spends the context the
+                // picture needs. A URL typed by hand is different - that is an
+                // instruction, and it still gets read.
+                val aboutMedia = attachments.isNotEmpty()
+
+                val timeSensitive = !aboutMedia && WebTools.looksTimeSensitive(trimmed)
                 // A question that turns on a date or on "latest" cannot be
                 // answered from weights at all, so it searches without waiting
-                // for the globe button.
-                val searchNow = wantsSearch || (s.webAccess && timeSensitive)
+                // for the toggle.
+                val searchNow = !aboutMedia && (wantsSearch || (s.webAccess && timeSensitive))
+                val useWikipedia = !aboutMedia && s.wikipediaGrounding
                 var retrieved: WebAugmenter.Augmented? = null
 
                 if (s.webAccess && trimmed.isNotEmpty()) {
-                    if (searchNow || urls.isNotEmpty() || s.wikipediaGrounding) {
+                    if (searchNow || urls.isNotEmpty() || useWikipedia) {
                         retrieved = retrieve(
                             replyId = replyId,
                             question = trimmed,
                             searchEnabled = searchNow,
-                            wikipedia = s.wikipediaGrounding,
+                            wikipedia = useWikipedia,
                             label = when {
                                 urls.isNotEmpty() -> "Reading ${hostOf(urls.first())}"
                                 searchNow -> "Searching the web"
                                 else -> "Checking Wikipedia"
                             },
                         )
+                    } else if (aboutMedia && wantsSearch && urls.isEmpty()) {
+                        // Say it rather than quietly ignoring an armed toggle.
+                        update(replyId) {
+                            it.copy(note = "Web search skipped: this question is about the attachment.")
+                        }
                     }
                 }
 
@@ -363,7 +379,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 // is available, and no search has been run yet. Asking again
                 // with sources is exactly what a person would do here.
                 val alreadySearched = searchNow || urls.isNotEmpty()
-                if (s.webAccess && !alreadySearched && trimmed.isNotEmpty() &&
+                if (s.webAccess && !alreadySearched && !aboutMedia && trimmed.isNotEmpty() &&
                     WebTools.looksUnanswered(reply) && container.engine.rollbackTurn()
                 ) {
                     builder.setLength(0)

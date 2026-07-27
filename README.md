@@ -86,6 +86,11 @@ With it on:
 - If the answer still comes back as "I don't know", the turn is rolled back and
   asked again with search results. The rollback matters: a retry stacked
   underneath the model's own refusal tends to get agreed with.
+- **An attachment turns retrieval off.** A message sent with a picture is a
+  question about that picture, and its text names nothing that can be looked up
+  - "classify this flower" is not a search query, and nothing could be searched
+  for until the model has seen the image anyway. A hand-typed URL still gets
+  read; it is an instruction rather than a guess.
 
 The Wikipedia setting means what it says: with it on, the app tries to look
 things up; with it off it never does. The only messages skipped are ones no

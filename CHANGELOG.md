@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-27 — 0.1.7
+
+- net — FIX retrieval running on messages that are about an attachment: "classify this flower" sent the app to Wikipedia and a search *before* the model had seen the picture. That text names nothing lookupable, so it returns an unrelated article and spends the context the image needs. With an attachment present, automatic Wikipedia, automatic time-sensitive search, the armed search toggle and the retry-with-search pass are all off. A URL typed by hand still gets read - that is an instruction, not a guess
+- ui — an armed search toggle that gets skipped for this reason says so on the message instead of being ignored quietly
+
 ## 2026-07-27 — 0.1.6
 
 - ui — FIX the caret staying at the top of the composer while dictation wrote into it, so a spoken sentence longer than one line scrolled out of sight below the field. The composer state is a `TextFieldValue` now and every write from dictation carries the caret to the end with it
