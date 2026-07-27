@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Public
@@ -78,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redcoralstudios.pocketllm.llm.EngineState
+import com.redcoralstudios.pocketllm.media.DocumentImport
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,6 +94,8 @@ fun ChatScreen(vm: ChatViewModel) {
     val searchArmed by vm.searchArmed.collectAsStateWithLifecycle()
     val activity by vm.activity.collectAsStateWithLifecycle()
     val attachError by vm.attachError.collectAsStateWithLifecycle()
+    val attachNote by vm.attachNote.collectAsStateWithLifecycle()
+    val pendingDocs by vm.pendingDocuments.collectAsStateWithLifecycle()
 
     // The composer text lives in the view model so dictation can write into it.
     val input by vm.input.collectAsStateWithLifecycle()
@@ -110,6 +114,10 @@ fun ChatScreen(vm: ChatViewModel) {
     val audioPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let(vm::attachAudio) }
+
+    val documentPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(vm::attachDocument) }
 
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -162,6 +170,52 @@ fun ChatScreen(vm: ChatViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(messages, key = { it.id }) { MessageBubble(it) }
+            }
+
+            // "First 5 of 12 pages" and the like: what the model will actually
+            // receive, said before it answers rather than after.
+            attachNote?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                )
+            }
+
+            if (pendingDocs.isNotEmpty()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    pendingDocs.forEach { doc ->
+                        AssistChip(
+                            onClick = { vm.removeDocument(doc) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.InsertDriveFile,
+                                    contentDescription = null,
+                                    Modifier.size(16.dp),
+                                )
+                            },
+                            label = {
+                                Text(
+                                    if (doc.truncated) "${doc.name} (part)" else doc.name,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove",
+                                    Modifier.size(16.dp),
+                                )
+                            },
+                        )
+                    }
+                }
             }
 
             if (pending.isNotEmpty()) {
@@ -233,6 +287,7 @@ fun ChatScreen(vm: ChatViewModel) {
                     )
                 },
                 onPickAudio = { audioPicker.launch(arrayOf("audio/*")) },
+                onPickDocument = { documentPicker.launch(DocumentImport.MIME_TYPES) },
                 onMicDown = { micPermission.launch(Manifest.permission.RECORD_AUDIO) },
                 onMicUp = vm::stopDictation,
             )
@@ -388,6 +443,26 @@ private fun MessageBubble(message: ChatMessage) {
                         Spacer(Modifier.height(4.dp))
                     }
                 }
+
+                // The document's text went into the prompt invisibly, so the
+                // name is the only sign the answer had anything to work from.
+                message.documents.forEach { name ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.InsertDriveFile,
+                            contentDescription = null,
+                            Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.size(4.dp))
+                        Text(
+                            name,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
                 // SelectionContainer gives long-press selection with the normal
                 // Android handles. It leaves single taps alone, so links inside
                 // the markdown still open.
@@ -534,6 +609,7 @@ private fun InputRow(
     onStop: () -> Unit,
     onPickImage: () -> Unit,
     onPickAudio: () -> Unit,
+    onPickDocument: () -> Unit,
     onMicDown: () -> Unit,
     onMicUp: () -> Unit,
 ) {
@@ -575,6 +651,22 @@ private fun InputRow(
                     text = { Text("Audio file") },
                     leadingIcon = { Icon(Icons.Default.GraphicEq, contentDescription = null) },
                     onClick = { showAttachMenu = false; onPickAudio() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Document") },
+                    trailingIcon = {
+                        Text(
+                            "PDF, Word, Excel, text",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.InsertDriveFile,
+                            contentDescription = null,
+                        )
+                    },
+                    onClick = { showAttachMenu = false; onPickDocument() },
                 )
 
                 HorizontalDivider()

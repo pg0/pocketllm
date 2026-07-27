@@ -11,8 +11,11 @@ import com.redcoralstudios.pocketllm.llm.Dials
 import com.redcoralstudios.pocketllm.llm.EngineState
 import com.redcoralstudios.pocketllm.llm.GenChunk
 import com.redcoralstudios.pocketllm.media.Dictation
+import com.redcoralstudios.pocketllm.media.DocumentImport
 import com.redcoralstudios.pocketllm.media.ImagePrep
 import com.redcoralstudios.pocketllm.media.MediaImport
+import com.redcoralstudios.pocketllm.media.PdfPages
+import com.redcoralstudios.pocketllm.media.PendingDocument
 import com.redcoralstudios.pocketllm.media.SpeechToText
 import com.redcoralstudios.pocketllm.model.DownloadProgress
 import com.redcoralstudios.pocketllm.model.ModelCatalog
@@ -44,6 +47,8 @@ data class ChatMessage(
     val role: Role,
     val text: String,
     val attachments: List<Attachment> = emptyList(),
+    /** File names of documents whose text was put into this turn. */
+    val documents: List<String> = emptyList(),
     val streaming: Boolean = false,
     val isError: Boolean = false,
     /** URLs that were fetched and fed to the model for this answer. */
@@ -79,6 +84,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _pending = MutableStateFlow<List<Attachment>>(emptyList())
     val pendingAttachments: StateFlow<List<Attachment>> = _pending.asStateFlow()
+
+    /**
+     * Documents waiting to go out with the next message. Separate from
+     * [_pending] because they take a different road entirely: their text is
+     * prepended to the prompt, where [_pending] goes through the encoders.
+     */
+    private val _pendingDocs = MutableStateFlow<List<PendingDocument>>(emptyList())
+    val pendingDocuments: StateFlow<List<PendingDocument>> = _pendingDocs.asStateFlow()
 
     private val _download = MutableStateFlow(DownloadState())
     val download: StateFlow<DownloadState> = _download.asStateFlow()
@@ -121,6 +134,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Set when an attachment could not be prepared, so it is not lost silently. */
     private val _attachError = MutableStateFlow<String?>(null)
     val attachError: StateFlow<String?> = _attachError.asStateFlow()
+
+    /** "First 5 of 12 pages", so a truncated attachment is never silent. */
+    private val _attachNote = MutableStateFlow<String?>(null)
+    val attachNote: StateFlow<String?> = _attachNote.asStateFlow()
 
     private var generation: Job? = null
     private var dictation: Job? = null
@@ -239,9 +256,59 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Attaches a document.
+     *
+     * Two roads, decided by the format. Text formats are read into the prompt,
+     * because text costs a quarter of what a picture of the same text costs.
+     * PDFs are rendered to page images instead: a PDF stores marks on a page
+     * rather than a document, Android's renderer hands out pixels and nothing
+     * else, and a scanned one has no text in it to extract at all.
+     */
+    fun attachDocument(uri: Uri) {
+        viewModelScope.launch {
+            if (DocumentImport.isPdf(getApplication(), uri)) {
+                attachPdf(uri)
+                return@launch
+            }
+
+            _activity.value = "Reading document"
+            val result = DocumentImport.read(getApplication(), uri)
+            _activity.value = null
+            val doc = result.getOrElse {
+                _attachError.value = it.message ?: "Could not read that document."
+                return@launch
+            }
+            _pendingDocs.value = _pendingDocs.value + PendingDocument.of(doc)
+        }
+    }
+
+    private suspend fun attachPdf(uri: Uri) {
+        _activity.value = "Rendering PDF pages"
+        val result = PdfPages.render(getApplication(), uri)
+        val pages = result.getOrElse {
+            _activity.value = null
+            _attachError.value = it.message ?: "Could not read that PDF."
+            return
+        }
+        _pending.value = _pending.value +
+            pages.files.map { Attachment(it.absolutePath, isAudio = false) }
+        _attachNote.value = "${DocumentImport.displayName(getApplication(), uri).orEmpty()} " +
+            pages.note
+        _activity.value = "Loading image encoder"
+        val ok = ensureProjector()
+        _activity.value = null
+        if (!ok) _attachError.value = "The image encoder could not be loaded."
+    }
+
     fun removeAttachment(attachment: Attachment) {
         _pending.value = _pending.value - attachment
+        if (_pending.value.isEmpty()) _attachNote.value = null
         File(attachment.path).delete()
+    }
+
+    fun removeDocument(doc: PendingDocument) {
+        _pendingDocs.value = _pendingDocs.value - doc
     }
 
     fun setInput(value: TextFieldValue) {
@@ -307,13 +374,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun send(text: String = _input.value.text) {
         val trimmed = text.trim()
         val attachments = _pending.value
-        if (trimmed.isEmpty() && attachments.isEmpty()) return
+        val documents = _pendingDocs.value
+        if (trimmed.isEmpty() && attachments.isEmpty() && documents.isEmpty()) return
         if (busy.value) return
 
         _pending.value = emptyList()
+        _pendingDocs.value = emptyList()
+        _attachNote.value = null
         _input.value = TextFieldValue("")
 
-        val userMessage = ChatMessage(nextId++, Role.USER, trimmed, attachments)
+        val userMessage = ChatMessage(
+            nextId++, Role.USER, trimmed, attachments, documents.map { it.name },
+        )
         val replyId = nextId++
         _messages.value = _messages.value + userMessage +
             ChatMessage(replyId, Role.ASSISTANT, "", streaming = true)
@@ -336,7 +408,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 // it returns an unrelated article and spends the context the
                 // picture needs. A URL typed by hand is different - that is an
                 // instruction, and it still gets read.
-                val aboutMedia = attachments.isNotEmpty()
+                //
+                // Documents count double here: "summarise this" is not a query,
+                // and the document has already claimed the context an article
+                // would have needed.
+                val aboutMedia = attachments.isNotEmpty() || documents.isNotEmpty()
 
                 val timeSensitive = !aboutMedia && WebTools.looksTimeSensitive(trimmed)
                 // A question that turns on a date or on "latest" cannot be
@@ -369,7 +445,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
                 var reply = generateInto(
                     replyId = replyId,
-                    promptText = retrieved?.prompt ?: trimmed,
+                    promptText = withDocuments(retrieved?.prompt ?: trimmed, documents),
                     attachments = attachments,
                     settings = s,
                     builder = builder,
@@ -423,6 +499,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 // Cancellation leaves the bubble mid-stream otherwise.
                 update(replyId) { it.copy(streaming = false) }
             }
+        }
+    }
+
+    /**
+     * Puts the attached documents in front of the question.
+     *
+     * Same shape as the retrieval block, and for the same reason: the model
+     * needs to be able to tell quoted material from the user's own words, and
+     * a delimiter it has seen once already is cheaper than teaching it a
+     * second convention.
+     */
+    private fun withDocuments(prompt: String, documents: List<PendingDocument>): String {
+        if (documents.isEmpty()) return prompt
+        return buildString {
+            documents.forEach { append(it.block()).append("\n\n") }
+            append(DOCUMENT_INSTRUCTION).append("\n\n")
+            append(prompt)
         }
     }
 
@@ -529,6 +622,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             container.engine.resetChat()
             _messages.value = emptyList()
             _pending.value = emptyList()
+            _pendingDocs.value = emptyList()
+            _attachNote.value = null
             ImagePrep.clearCache(getApplication())
         }
     }
@@ -608,6 +703,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun update(id: Long, transform: (ChatMessage) -> ChatMessage) {
         _messages.value = _messages.value.map { if (it.id == id) transform(it) else it }
+    }
+
+    private companion object {
+        /**
+         * Truncation is stated rather than hidden: a model that answers "the
+         * document does not mention X" about a file whose second half was cut
+         * off is worse than one that says which part it saw.
+         */
+        const val DOCUMENT_INSTRUCTION =
+            "The document above was attached by the user just now. Answer from it, quote " +
+                "from it where that helps, and say plainly if it does not contain what " +
+                "was asked. If it is marked as truncated, only the part shown is " +
+                "available to you - say so rather than assuming the rest is missing."
     }
 
     private fun format(bytes: Long): String {

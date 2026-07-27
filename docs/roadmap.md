@@ -21,7 +21,10 @@ What is still worth doing:
   parser (lite.duckduckgo.com) as fallback would help.
 - **Wire retrieval to the fact-checking dial.** Above some threshold, run a
   verification search automatically instead of waiting for the globe button.
-- **PDF reading.** `fetch` deliberately refuses non-text content types today.
+- **PDF reading from the web.** `fetch` deliberately refuses non-text content
+  types. Attached PDFs are handled (rendered to page images, see
+  `media/PdfPages.kt`); a linked one is not, and routing it through the same
+  renderer would close the gap.
 - **Provider choice**, if the no-external-setup rule is ever relaxed.
 
 Honest note: with web access on, the app is no longer strictly offline. It is
@@ -185,6 +188,23 @@ solved by the platform recogniser (section 1a) at zero download cost.
 That leaves no open problem for `whisper.cpp` to fix here. Revisit only if
 on-device recognition turns out to be materially worse than Whisper for the
 languages in use, and weigh it against a 150-570 MB second model.
+
+## 8b. Documents - shipped 2026-07-27, with edges
+
+Text formats and Office files go into the prompt; PDFs go to the vision encoder
+as page images. See the README for why they differ.
+
+Open:
+
+- **Only the first sheet of an .xlsx is read.** A workbook with a dozen tabs
+  loses eleven of them silently. Needs a sheet picker, or at least a note.
+- **Five PDF pages** is a context limit, not a design one. It should scale with
+  the context-size setting the way the frame count should have.
+- **No .pptx.** Same zip-of-XML trick would work on `ppt/slides/slideN.xml`.
+- **Scanned PDFs depend on the model's OCR.** Gemma 4 reads clean scans well and
+  handwriting poorly; there is no fallback when it misreads.
+- **A second document replaces nothing** - attach three and all three go in,
+  which will overflow the window before the app says anything useful.
 
 ## 9. Smaller things
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-27 — 0.2.0
+
+- media — **documents attach from the + menu**: PDF, Word, Excel, CSV and any text or code file
+- media — text formats go into the **prompt**, not through an encoder. Text costs roughly a quarter of what a picture of the same text costs, and it is exact rather than read off pixels. Capped at 6000 characters of a 4096-token window, and truncation is stated in the prompt so the model says "the part I can see does not mention that" instead of "the document does not mention that"
+- media — `.docx` and `.xlsx` are parsed in-app - both are a zip of XML, so it is one entry and a few regexes rather than several megabytes of APK for a format that is mostly styling. Excel cells resolve through the shared-string table and come out tab-separated, one row per line
+- media — `.pdf` renders to page images for the vision encoder instead. A PDF describes marks on a page rather than text, Android's `PdfRenderer` hands out pixels and nothing else, and a scanned document has no text layer to extract at all - looking at it is the only way to read it. Five pages max (~250 tokens each), rendered at 1536 px because body copy at 1024 px stops being legible, and the page count is shown before sending
+- media — the old binary `.doc`/`.xls`/`.ppt` are refused by name with the fix ("save it as .docx, CSV or text") rather than producing mojibake
+- net — a document suppresses retrieval the same way an image does: "summarise this" is not a search query, and the document has already claimed the context an article would have needed
+- tests — 49 total: docx runs and line breaks, xlsx shared strings, self-closing and out-of-range cells
+
 ## 2026-07-27 — 0.1.10
 
 - ui — the status line names each retrieval step as it happens: "Checking Wikipedia", "Searching DuckDuckGo", "Reading 2/3: heise.de". Retrieval is several sequential requests against other people's servers, and one static label for all of them makes a slow site look exactly like a hang

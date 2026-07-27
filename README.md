@@ -25,6 +25,9 @@ download, and after that only if you switch web access on.
   retrieval has something to search with.
 - **Audio in.** The `+` menu also attaches an audio file, which *does* go to the
   model's audio encoder directly, for when the sound itself is the subject.
+- **Documents in.** PDF, Word, Excel, CSV, text and source files. Text formats
+  are read into the prompt; PDFs are rendered to page images. Why they differ is
+  below.
 - **Two dials**, creativity and fact-checking, described below, plus an
   editable system prompt for when the dials are not enough.
 - **Web access, off by default.** Turn it on and a link in your message gets
@@ -38,6 +41,38 @@ download, and after that only if you switch web access on.
   invented. Long press selects text, double tap copies the whole message.
 - **Resumable downloads.** A 4 GB fetch over mobile data will get interrupted;
   it resumes from where it stopped.
+
+## Documents
+
+Two roads, decided by the format.
+
+**Text formats go into the prompt**: `.txt`, `.md`, `.csv`, `.json`, `.xml`,
+source files, and `.docx` / `.xlsx`. Text costs roughly a quarter of what a
+picture of the same text costs, and it is exact rather than read off pixels.
+Word and Excel are parsed in-app: both are a zip of XML, so it is one entry and
+a few regexes rather than several megabytes of APK for a format that is mostly
+styling information. Excel cells resolve through the shared-string table and
+come out tab-separated, one row per line.
+
+Capped at 6000 characters, because the 4096-token window still has to hold the
+conversation and the answer. **Truncation is stated in the prompt**, so the
+model says "the part I can see does not mention that" rather than "the document
+does not mention that".
+
+**PDFs are rendered to page images** for the vision encoder instead. A PDF
+describes marks on a page rather than text - words are drawn at coordinates in
+whatever order the producer felt like, and recovering reading order is what
+makes PDF libraries big. Android's own `PdfRenderer` hands out pixels and
+nothing else. The vision path also wins outright on the case that defeats text
+extraction: a scanned or photographed document has no text layer at all.
+
+Five pages maximum, roughly 250 tokens each, rendered at 1536 px because body
+copy at 1024 px stops being legible. The page count is shown before you send, so
+a long file is never quietly cut.
+
+The old binary `.doc` / `.xls` / `.ppt` are refused by name, with the fix - they
+are OLE compound files and reading them needs a library that costs more than the
+case is worth.
 
 ## The two settings
 
@@ -200,6 +235,8 @@ app/src/main/kotlin/com/redcoralstudios/pocketllm/
   media/ImagePrep.kt        downscale + EXIF rotate before the vision encoder
   media/SpeechToText.kt     platform recogniser -> text in the composer
   media/MediaImport.kt      audio file import for the audio encoder
+  media/DocumentImport.kt   text, docx and xlsx -> text for the prompt
+  media/PdfPages.kt         pdf -> page images for the vision encoder
   net/WebTools.kt           search, page fetch, Wikipedia, HTML-to-text
   net/WebAugmenter.kt       builds the retrieval block prepended to a turn
   ui/Markdown.kt            block + inline markdown renderer
