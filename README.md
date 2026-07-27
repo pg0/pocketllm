@@ -210,6 +210,45 @@ Sizes in `ModelCatalog.kt` are the real byte counts from the Hugging Face API.
 A file is only treated as present at its exact expected size, so a truncated
 download surfaces immediately instead of as an unreadable-GGUF crash later.
 
+### Any other model from Hugging Face
+
+**Settings → Model → Add from Hugging Face.** Paste a repo id or its URL, and
+the app reads the file tree, lists every single-file `.gguf` with its real size
+and downloads the one you pick. An `mmproj` file in the same repo can be added
+alongside it for image and voice; without one the model is text only.
+
+What the listing deliberately does not offer:
+
+- **Split GGUFs** (`model-00001-of-00003.gguf`). The downloader fetches one
+  file, so picking shard 1 would download gigabytes and then fail to load with
+  an error mentioning nothing about shards. They are hidden and counted in a
+  note instead.
+- **MTP drafters.** Speculative-decoding sidecars, not models to chat with.
+
+Gated repos need a **Hugging Face access token**, entered in the same dialog.
+It is stored on the device and sent to huggingface.co only.
+
+Each row says whether the model fits: weights are memory-mapped, so one that is
+too large does not fail cleanly, it thrashes or gets the app killed mid-answer.
+
+**The prompt format is the part that can go wrong.** Every model family wraps
+turns differently, and a wrong wrapper does not throw an error - the model just
+answers badly, which reads as a bad model. PocketLLM picks a renderer once, at
+load:
+
+| Kind | When | Confidence |
+|---|---|---|
+| `gemma4` | the template contains `<\|turn>` | exact, hand-written |
+| `gguf` | `llama_chat_apply_template` accepts the model's own template | exact |
+| `chatml` | no template, or one llama.cpp does not recognise | a guess |
+
+Chosen on the template's contents rather than the architecture name, so a
+re-quantised or renamed Gemma 4 still lands on the right renderer. The `gguf`
+row is only taken after a probe render actually succeeds - llama.cpp does not
+parse Jinja, it matches against a fixed list of about sixty families, and the
+app would rather find out at load than mid-conversation. When it falls through
+to ChatML the settings screen says so, in red.
+
 ## Requirements
 
 - A phone with **8 GB RAM** (E4B needs roughly 5 GB free with the projector
@@ -265,7 +304,9 @@ app/src/main/kotlin/com/redcoralstudios/pocketllm/
   llm/LlamaBridge.kt        1:1 JNI declarations, no policy
   llm/LlmEngine.kt          session lifecycle, single worker thread, streaming
   llm/GenerationParams.kt   the two dials -> sampler values + system prompt
-  model/ModelCatalog.kt     known models, real HF sizes
+  model/ModelCatalog.kt     the two built-in models, real HF sizes
+  model/HuggingFace.kt      repo file listing, so any GGUF repo can be added
+  model/CustomModels.kt     user-added models: storage codec + RAM estimate
   model/ModelDownloader.kt  resumable range-request download
   model/ModelStore.kt       paths, completeness, RAM/thread heuristics
   media/ImagePrep.kt        downscale + EXIF rotate before the vision encoder
@@ -277,6 +318,7 @@ app/src/main/kotlin/com/redcoralstudios/pocketllm/
   net/WebAugmenter.kt       builds the retrieval block prepended to a turn
   ui/Markdown.kt            block + inline markdown renderer
   ui/RemoteImage.kt         disk-cached image loading, no image library
+  ui/ModelPicker.kt         model list + the add-from-Hugging-Face dialog
   ui/                       Compose chat + settings sheet
 ```
 
@@ -292,8 +334,11 @@ Notes worth knowing before changing anything:
   using `<|turn>role … <turn|>`, which matches nothing, so the call returns -1.
   Forcing it onto llama.cpp's older `"gemma"` entry is worse than the error:
   that emits `<start_of_turn>`, which Gemma 4 does not use at all, and the
-  result is a silently wrong prompt rather than a loud failure. `render_chat`
-  writes the format by hand, verified against the template in the GGUF.
+  result is a silently wrong prompt rather than a loud failure. `render_gemma4`
+  writes the format by hand, verified against the template in the GGUF, and
+  `pick_template` routes to it on the `<|turn>` marker. Every other model does
+  go through `llama_chat_apply_template`, but only after a probe render proves
+  it works.
 - **Gemma 4 *does* have a real `system` role** - Gemma 3 did not, and code
   written for Gemma 3 folds the system prompt into the first user turn.
 - **`GGML_NATIVE=OFF` alone leaves a 5x slowdown on the table.** With it off and
@@ -331,7 +376,13 @@ Notes worth knowing before changing anything:
   not do video.
 - **Only the new suffix is ever tokenized.** The full transcript is re-rendered
   through the chat template each turn, then diffed against what is already in
-  the KV cache - the standard llama.cpp approach.
+  the KV cache - the standard llama.cpp approach. That is only valid while each
+  render *extends* the last one, which stopped being a safe assumption once any
+  model could be loaded: several of llama.cpp's built-in templates fold the
+  system prompt into the **last** user message, so the whole transcript shifts
+  every turn. The session keeps the previous render as text and compares, then
+  re-evaluates from scratch when the prefix does not match. Slow, and it beats
+  feeding the model a prompt spliced from two different renderings.
 - **`llama_sampler_sample` accepts the token internally.** Do not call
   `llama_sampler_accept` after it or repeat penalties are counted twice.
 - **Token pieces split UTF-8 characters.** Partial byte sequences are held back

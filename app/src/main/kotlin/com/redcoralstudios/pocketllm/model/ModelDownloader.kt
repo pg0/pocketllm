@@ -38,7 +38,11 @@ class ModelDownloader(private val store: ModelStore) {
         .followRedirects(true)
         .build()
 
-    fun download(remote: RemoteFile): Flow<DownloadProgress> = flow {
+    /**
+     * @param token Hugging Face access token, needed for gated repos. Sent as a
+     *        bearer header to huggingface.co and nowhere else.
+     */
+    fun download(remote: RemoteFile, token: String? = null): Flow<DownloadProgress> = flow {
         val target = store.fileFor(remote)
         if (target.length() == remote.sizeBytes) {
             emit(DownloadProgress.Done(remote.fileName))
@@ -62,13 +66,21 @@ class ModelDownloader(private val store: ModelStore) {
 
         val request = Request.Builder()
             .url(remote.url)
-            .apply { if (offset > 0) header("Range", "bytes=$offset-") }
+            .apply {
+                if (offset > 0) header("Range", "bytes=$offset-")
+                token?.takeIf { it.isNotBlank() }?.let { header("Authorization", "Bearer $it") }
+            }
             .build()
 
         try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    emit(DownloadProgress.Failed(remote.fileName, "HTTP ${response.code}"))
+                    val reason = when (response.code) {
+                        401, 403 -> "access denied - this repo needs a Hugging Face token"
+                        404 -> "file not found in the repo"
+                        else -> "HTTP ${response.code}"
+                    }
+                    emit(DownloadProgress.Failed(remote.fileName, reason))
                     return@flow
                 }
                 // A server that ignores Range replies 200 and restarts the body.

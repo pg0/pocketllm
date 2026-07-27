@@ -53,28 +53,41 @@ What is still open here:
   that the platform recogniser may route to the network, which quietly makes an
   offline app online. Worth surfacing in the UI when it happens.
 
-## 1b. Arbitrary Hugging Face models
+## 1b. Arbitrary Hugging Face models - shipped 2026-07-27
 
-Requested 2026-07-27. Today `ModelCatalog` is a hardcoded list of two Gemma 4
-builds with byte sizes baked in.
+Paste a repo id, get a list of its `.gguf` files with real sizes, download one.
+`model/HuggingFace.kt` reads the tree endpoint, `model/CustomModels.kt` stores
+the result, `ui/ModelPicker.kt` is the dialog.
 
-Wanted: paste any HF repo id (or repo + filename), have the app query
-`https://huggingface.co/api/models/<repo>`, list the `.gguf` files with their
-real sizes, and download the chosen one. Pieces already in place: the downloader
-is generic over `RemoteFile`, and sizes come from that same API today.
+The hard part was the **chat template**. `render_chat` hardcoded Gemma 4's
+`<|turn>role ... <turn|>`, which is exactly the format `llama_chat_apply_template`
+cannot produce. Resolved by picking a renderer once at load: the hand-written
+one on the `<|turn>` marker, the model's own template through llama.cpp when a
+probe render succeeds, ChatML as a stated guess otherwise. No Jinja interpreter
+was needed after all - llama.cpp's fixed list covers about sixty families, and
+the app only has to notice when it does not.
 
-What needs real work:
+That surfaced a second thing: incremental prompt evaluation assumed every render
+extends the previous one. Several built-in templates fold the system prompt into
+the *last* user message, so the transcript shifts every turn. The session now
+compares against the previous render and re-evaluates from scratch on a
+mismatch.
 
-- **Chat template.** `render_chat` in `pocketllm_jni.cpp` hardcodes Gemma 4's
-  `<|turn>role ... <turn|>` format. Another model family needs its own. Either
-  detect the architecture from GGUF metadata and switch renderer, or bundle a
-  small Jinja subset interpreter (llama.cpp's own
-  `llama_chat_apply_template` is not enough - it failed on Gemma 4 precisely
-  because it only pattern-matches a fixed list).
-- **mmproj pairing.** Multimodal repos ship a matching projector; text-only ones
-  do not. The catalog entry has to model "projector optional".
-- **Gated repos** need an HF token; `.env.example` already has the placeholder.
-- **RAM guardrails** so a 13 GB Q8 download is refused on an 8 GB phone.
+Still open here:
+
+- **Nothing verifies the template guess.** A model that lands on ChatML gets a
+  red warning and no further help. Reading `tokenizer.chat_template` and
+  matching a few more families by hand would shrink the guess bucket.
+- **Split GGUFs are refused, not joined.** `model-00001-of-00003.gguf` and
+  friends are hidden with a note. Joining them means downloading N files and
+  either concatenating or passing the first path to llama.cpp, which does
+  understand shards natively - the downloader is what does not.
+- **RAM guardrails warn, they do not refuse.** A row turns red below the
+  estimate and the download still proceeds. That is probably right for a
+  borderline case and wrong for a 13 GB Q8 on an 8 GB phone.
+- **Context size is one global setting**, so a model that could take 32k and one
+  that should stay at 4k share a number. `recommendedContext` is stored per
+  model and currently ignored at load.
 
 ## 2. Name change
 

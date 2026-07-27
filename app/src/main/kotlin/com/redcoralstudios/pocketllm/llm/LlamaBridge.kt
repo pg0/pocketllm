@@ -48,6 +48,13 @@ object LlamaBridge {
     external fun nativeSupportsVision(handle: Long): Boolean
     external fun nativeSupportsAudio(handle: Long): Boolean
 
+    /**
+     * {architecture, template kind} of the loaded model. Template kind is one of
+     * `gemma4` (hand-written renderer), `gguf` (the model's own template) or
+     * `chatml` (a guess, because llama.cpp did not recognise the template).
+     */
+    external fun nativeModelInfo(handle: Long): Array<String>
+
     /** Drops the KV cache and the conversation history. */
     external fun nativeResetChat(handle: Long)
 

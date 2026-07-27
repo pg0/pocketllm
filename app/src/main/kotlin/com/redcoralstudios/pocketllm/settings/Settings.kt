@@ -86,6 +86,17 @@ data class AppSettings(
     /** Show context usage and speed under the conversation. */
     val showStats: Boolean,
     /**
+     * Models added from a Hugging Face repo, encoded by [CustomModels]. Kept as
+     * a single string because DataStore Preferences has no list-of-record type
+     * and these records are flat.
+     */
+    val customModels: String,
+    /**
+     * Hugging Face access token, for gated and private repos. Never sent
+     * anywhere but huggingface.co, and only when set.
+     */
+    val hfToken: String,
+    /**
      * User-written system prompt. Blank means "generate it from the dials".
      * When set, this text is used verbatim and the dials affect only sampling.
      */
@@ -108,6 +119,8 @@ data class AppSettings(
             wikipediaGrounding = false,
             imageTokens = ImageDetail.STANDARD,
             showStats = false,
+            customModels = "",
+            hfToken = "",
             systemPrompt = "",
         )
     }
@@ -132,6 +145,8 @@ class SettingsRepository(private val context: Context) {
             wikipediaGrounding = p[KEY_WIKIPEDIA] ?: AppSettings.DEFAULT.wikipediaGrounding,
             imageTokens = p[KEY_IMAGE_TOKENS] ?: AppSettings.DEFAULT.imageTokens,
             showStats = p[KEY_SHOW_STATS] ?: AppSettings.DEFAULT.showStats,
+            customModels = p[KEY_CUSTOM_MODELS] ?: AppSettings.DEFAULT.customModels,
+            hfToken = p[KEY_HF_TOKEN] ?: AppSettings.DEFAULT.hfToken,
             systemPrompt = p[KEY_SYSTEM_PROMPT] ?: AppSettings.DEFAULT.systemPrompt,
         )
     }
@@ -147,6 +162,8 @@ class SettingsRepository(private val context: Context) {
     suspend fun setWikipediaGrounding(v: Boolean) = edit { it[KEY_WIKIPEDIA] = v }
     suspend fun setImageTokens(v: Int) = edit { it[KEY_IMAGE_TOKENS] = v.coerceIn(40, 2048) }
     suspend fun setShowStats(v: Boolean) = edit { it[KEY_SHOW_STATS] = v }
+    suspend fun setCustomModels(v: String) = edit { it[KEY_CUSTOM_MODELS] = v }
+    suspend fun setHfToken(v: String) = edit { it[KEY_HF_TOKEN] = v.trim() }
     suspend fun setSystemPrompt(v: String) = edit { it[KEY_SYSTEM_PROMPT] = v }
 
     /** Restores the response-style dials only, leaving model and web settings alone. */
@@ -172,6 +189,8 @@ class SettingsRepository(private val context: Context) {
         val KEY_WIKIPEDIA = booleanPreferencesKey("wikipedia_grounding")
         val KEY_IMAGE_TOKENS = intPreferencesKey("image_tokens")
         val KEY_SHOW_STATS = booleanPreferencesKey("show_stats")
+        val KEY_CUSTOM_MODELS = stringPreferencesKey("custom_models")
+        val KEY_HF_TOKEN = stringPreferencesKey("hf_token")
         val KEY_SYSTEM_PROMPT = stringPreferencesKey("system_prompt")
     }
 }

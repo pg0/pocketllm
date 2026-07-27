@@ -18,10 +18,13 @@ import com.redcoralstudios.pocketllm.media.MediaImport
 import com.redcoralstudios.pocketllm.media.PdfPages
 import com.redcoralstudios.pocketllm.media.PendingDocument
 import com.redcoralstudios.pocketllm.media.SpeechToText
+import com.redcoralstudios.pocketllm.model.CustomModels
 import com.redcoralstudios.pocketllm.model.DownloadProgress
 import com.redcoralstudios.pocketllm.model.ModelCatalog
 import com.redcoralstudios.pocketllm.model.ModelSpec
 import com.redcoralstudios.pocketllm.model.ModelStore
+import com.redcoralstudios.pocketllm.model.RepoFile
+import com.redcoralstudios.pocketllm.model.RepoListing
 import com.redcoralstudios.pocketllm.net.WebAugmenter
 import com.redcoralstudios.pocketllm.net.WebTools
 import com.redcoralstudios.pocketllm.settings.AppSettings
@@ -156,7 +159,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun autoLoad(s: AppSettings) {
-        val spec = ModelCatalog.byId(s.modelId) ?: ModelCatalog.default
+        val spec = ModelCatalog.byId(s.modelId, CustomModels.decode(s.customModels))
+            ?: ModelCatalog.default
         container.engine.ensureLoaded(
             spec = spec,
             contextSize = s.contextSize,
@@ -181,7 +185,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val prefix = "${index + 1}/${files.size} ${remote.fileName}"
                 var failed = false
 
-                container.downloader.download(remote).collect { p ->
+                container.downloader.download(remote, settings.value.hfToken).collect { p ->
                     when (p) {
                         is DownloadProgress.Running ->
                             _download.value = DownloadState(
@@ -212,7 +216,85 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun currentSpec(): ModelSpec =
-        ModelCatalog.byId(settings.value.modelId) ?: ModelCatalog.default
+        ModelCatalog.byId(settings.value.modelId, customModels()) ?: ModelCatalog.default
+
+    // ------------------------------------------------------- Hugging Face models
+
+    fun customModels(): List<ModelSpec> = CustomModels.decode(settings.value.customModels)
+
+    /** Built-in models first, then whatever the user has added. */
+    fun availableModels(): List<ModelSpec> = ModelCatalog.builtIn + customModels()
+
+    /**
+     * Result of looking up a repo, held here rather than in the dialog so a
+     * rotation mid-search does not throw the listing away.
+     */
+    data class RepoState(
+        val busy: Boolean = false,
+        val listing: RepoListing? = null,
+        val error: String? = null,
+    )
+
+    private val _repo = MutableStateFlow(RepoState())
+    val repo: StateFlow<RepoState> = _repo.asStateFlow()
+
+    fun searchRepo(input: String) {
+        if (_repo.value.busy) return
+        viewModelScope.launch {
+            _repo.value = RepoState(busy = true)
+            val result = container.huggingFace.list(input, settings.value.hfToken)
+            _repo.value = result.fold(
+                onSuccess = { RepoState(listing = it) },
+                onFailure = { RepoState(error = it.message ?: "Lookup failed") },
+            )
+        }
+    }
+
+    fun clearRepo() {
+        _repo.value = RepoState()
+    }
+
+    /**
+     * Adds a model and selects it, but does not download it -- the file is up to
+     * several gigabytes and that decision belongs to the user, on the screen
+     * where the size is visible.
+     */
+    fun addCustomModel(repo: String, weights: RepoFile, projector: RepoFile?) {
+        viewModelScope.launch {
+            val spec = CustomModels.from(repo, weights, projector, settings.value.contextSize)
+            // Same file added twice replaces the old entry instead of stacking a
+            // duplicate: both would point at one download anyway.
+            val updated = customModels().filterNot { it.id == spec.id } + spec
+            container.settings.setCustomModels(CustomModels.encode(updated))
+            container.settings.setModel(spec.id)
+            _repo.value = RepoState()
+        }
+    }
+
+    /** Removes the entry and any files it downloaded. */
+    fun removeCustomModel(spec: ModelSpec) {
+        if (!spec.isCustom) return
+        viewModelScope.launch {
+            container.modelStore.delete(spec)
+            val updated = customModels().filterNot { it.id == spec.id }
+            container.settings.setCustomModels(CustomModels.encode(updated))
+            if (settings.value.modelId == spec.id) {
+                container.settings.setModel(ModelCatalog.default.id)
+            }
+        }
+    }
+
+    fun setHfToken(value: String) {
+        viewModelScope.launch { container.settings.setHfToken(value) }
+    }
+
+    /**
+     * Whether this model plausibly fits. Weights are memory-mapped, so a model
+     * larger than RAM does not fail cleanly - it thrashes, or the kernel kills
+     * the app mid-answer.
+     */
+    fun fitsInRam(spec: ModelSpec): Boolean =
+        ModelStore.totalRamGb(getApplication()) >= spec.minRamGb
 
     // ------------------------------------------------------------- attachments
 

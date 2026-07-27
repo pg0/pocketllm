@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redcoralstudios.pocketllm.llm.Dials
-import com.redcoralstudios.pocketllm.model.ModelCatalog
 import com.redcoralstudios.pocketllm.settings.ImageDetail
 import kotlin.math.roundToInt
 
@@ -106,37 +105,7 @@ fun SettingsSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
 
-            Text("Model", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModelCatalog.all.forEach { spec ->
-                    FilterChip(
-                        selected = spec.id == settings.modelId,
-                        onClick = { vm.selectModel(spec) },
-                        label = { Text(spec.displayName.substringBefore(" (")) },
-                    )
-                }
-            }
-            val active = vm.currentSpec()
-            Spacer(Modifier.height(6.dp))
-            Text(
-                buildString {
-                    append(active.summary)
-                    append("\n")
-                    append(if (vm.isDownloaded(active)) "Weights: downloaded" else "Weights: not downloaded")
-                    append(" - ")
-                    append(
-                        if (vm.hasProjector(active)) "image/voice: available"
-                        else "image/voice: encoder missing"
-                    )
-                },
-                style = MaterialTheme.typography.labelSmall,
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { vm.downloadModel(active) }) { Text("Download / repair") }
-                TextButton(onClick = { vm.deleteModel(active) }) { Text("Delete files") }
-            }
+            ModelSection(vm = vm, selectedId = settings.modelId)
 
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()

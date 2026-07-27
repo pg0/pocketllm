@@ -16,10 +16,10 @@ android {
         applicationId = "com.redcoralstudios.pocketllm"
         minSdk = 29
         targetSdk = 34
-        // Versioning rule: every change I make bumps the patch (+0.0.1).
-        // Minor bumps (+0.1.0) happen only when Patrick calls it.
-        versionCode = 15
-        versionName = "0.3.1"
+        // Versioning rule: a feature is a minor bump (+0.1.0), a fix or a small
+        // convenience is a patch (+0.0.1).
+        versionCode = 16
+        versionName = "0.4.0"
 
         ndk {
             // Every phone that can hold a 3 GB model in RAM is arm64. Shipping
@@ -102,5 +102,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    // The real org.json, so the Hugging Face parser is tested rather than
+    // stubbed: android.jar's version is method-stubs only under unit test, and
+    // isReturnDefaultValues would make every assertion pass on nulls.
+    testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }

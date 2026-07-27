@@ -32,12 +32,18 @@ struct pll_session {
     mtmd_context       * mctx  = nullptr;
 
     std::string tmpl;   // chat template pulled from the GGUF metadata
+    std::string arch;   // general.architecture, for the UI to report
+    std::string tmpl_kind;  // which renderer render_chat() will use
 
     // Full conversation, kept so the chat template can be re-rendered. Only the
     // newly appended suffix is ever tokenized -- the KV cache holds the rest.
     std::vector<std::pair<std::string, std::string>> messages;
-    size_t    prev_len = 0;   // bytes of the rendered transcript already in KV
-    llama_pos n_past   = 0;
+    // The rendered transcript already sitting in the KV cache. Kept as text, not
+    // just a length, so the next render can be checked against it: incremental
+    // evaluation is only valid while each render extends the previous one, and
+    // not every chat template is append-only.
+    std::string prev_render;
+    llama_pos   n_past = 0;
 
     int32_t n_batch = 512;
 
@@ -46,7 +52,7 @@ struct pll_session {
     // retry the same question with web context instead of leaving a wrong
     // answer in the history for the model to stay consistent with.
     size_t    undo_messages = 0;
-    size_t    undo_prev_len = 0;
+    size_t    undo_render   = 0;
     llama_pos undo_n_past   = 0;
     bool      undo_valid    = false;
 
@@ -136,11 +142,8 @@ std::string trim(const std::string & s) {
  *
  * BOS is deliberately not emitted here; the tokenizer adds it via add_special on
  * the first segment, and emitting it too would double it.
- *
- * @return the rendered length; this renderer cannot fail.
  */
-int32_t render_chat(pll_session * s, bool add_assistant, std::string & out) {
-    out.clear();
+void render_gemma4(pll_session * s, bool add_assistant, std::string & out) {
     for (const auto & m : s->messages) {
         // Gemma 4 calls the assistant "model". It does have a real system role,
         // unlike Gemma 3 where system had to be folded into the first user turn.
@@ -154,7 +157,82 @@ int32_t render_chat(pll_session * s, bool add_assistant, std::string & out) {
     if (add_assistant) {
         out += "<|turn>model\n";
     }
-    return static_cast<int32_t>(out.size());
+}
+
+/**
+ * Decides how this model's prompts get built, once, at load time.
+ *
+ * Three outcomes, in descending order of how much we trust them:
+ *
+ *   "gemma4" - the hand-written renderer above. Chosen on the marker rather
+ *              than the architecture name so a re-quantised or renamed Gemma 4
+ *              still lands here.
+ *   "gguf"   - the model's own template, run through llama_chat_apply_template.
+ *              Only chosen after a probe render actually succeeds, because that
+ *              function returns -1 for anything outside its fixed list and we
+ *              would rather find that out now than mid-conversation.
+ *   "chatml" - last resort for a GGUF with no template, or one llama.cpp does
+ *              not recognise. ChatML is what most instruction tunes are trained
+ *              on these days, so it is a decent guess, but it *is* a guess and
+ *              the UI says so.
+ */
+std::string pick_template(const std::string & tmpl) {
+    if (tmpl.find("<|turn>") != std::string::npos) return "gemma4";
+    if (!tmpl.empty()) {
+        const llama_chat_message probe{"user", "hi"};
+        char buf[512];
+        if (llama_chat_apply_template(tmpl.c_str(), &probe, 1, true, buf, sizeof(buf)) >= 0) {
+            return "gguf";
+        }
+        LOGI("chat template not recognised by llama.cpp, falling back to ChatML");
+    }
+    return "chatml";
+}
+
+/**
+ * Renders the whole conversation as a prompt string.
+ *
+ * @return the rendered length, or -1 if the template could not be applied.
+ */
+int32_t render_chat(pll_session * s, bool add_assistant, std::string & out) {
+    out.clear();
+
+    if (s->tmpl_kind == "gemma4") {
+        render_gemma4(s, add_assistant, out);
+        return static_cast<int32_t>(out.size());
+    }
+
+    // llama_chat_apply_template takes borrowed char pointers, so the trimmed
+    // copies have to outlive the message array it reads from.
+    std::vector<std::string> bodies;
+    bodies.reserve(s->messages.size());
+    for (const auto & m : s->messages) bodies.push_back(trim(m.second));
+
+    std::vector<llama_chat_message> msgs;
+    msgs.reserve(s->messages.size());
+    size_t want = 256;
+    for (size_t i = 0; i < s->messages.size(); ++i) {
+        msgs.push_back({s->messages[i].first.c_str(), bodies[i].c_str()});
+        want += bodies[i].size() + s->messages[i].first.size() + 64;
+    }
+
+    const char * tmpl = (s->tmpl_kind == "gguf") ? s->tmpl.c_str() : "chatml";
+
+    std::vector<char> buf(want);
+    int32_t n = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), add_assistant,
+                                          buf.data(), static_cast<int32_t>(buf.size()));
+    // The documented way to size the buffer: ask, then ask again with room.
+    if (n > static_cast<int32_t>(buf.size())) {
+        buf.resize(static_cast<size_t>(n));
+        n = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), add_assistant,
+                                      buf.data(), static_cast<int32_t>(buf.size()));
+    }
+    if (n < 0) {
+        LOGE("llama_chat_apply_template failed for kind=%s", s->tmpl_kind.c_str());
+        return -1;
+    }
+    out.assign(buf.data(), static_cast<size_t>(n));
+    return n;
 }
 
 // Decode a plain token run in n_batch-sized chunks, advancing n_past.
@@ -278,8 +356,17 @@ JNI_FN(nativeLoadModel)(JNIEnv * env, jobject, jstring jpath,
     if (const char * t = llama_model_chat_template(s->model, nullptr)) {
         s->tmpl = t;
     }
+    s->tmpl_kind = pick_template(s->tmpl);
 
-    LOGI("model loaded: n_ctx=%u n_batch=%d", llama_n_ctx(s->lctx), s->n_batch);
+    char arch_buf[128];
+    if (llama_model_meta_val_str(s->model, "general.architecture",
+                                 arch_buf, sizeof(arch_buf)) > 0) {
+        s->arch = arch_buf;
+    }
+
+    LOGI("model loaded: arch=%s template=%s n_ctx=%u n_batch=%d",
+         s->arch.empty() ? "?" : s->arch.c_str(), s->tmpl_kind.c_str(),
+         llama_n_ctx(s->lctx), s->n_batch);
     return reinterpret_cast<jlong>(s);
 }
 
@@ -325,6 +412,26 @@ JNI_FN(nativeLoadProjector)(JNIEnv * env, jobject, jlong handle, jstring jpath, 
     return JNI_TRUE;
 }
 
+/**
+ * {architecture, template kind} of the loaded model.
+ *
+ * Both are answers to "what did I just download": a GGUF the app has never seen
+ * before either renders with its own template or gets a ChatML guess, and the
+ * difference is worth showing rather than leaving the user to infer it from
+ * strange replies.
+ */
+JNIEXPORT jobjectArray JNICALL
+JNI_FN(nativeModelInfo)(JNIEnv * env, jobject, jlong handle) {
+    auto * s = reinterpret_cast<pll_session *>(handle);
+    jclass str_cls = env->FindClass("java/lang/String");
+    jobjectArray out = env->NewObjectArray(2, str_cls, env->NewStringUTF(""));
+    if (out == nullptr || s == nullptr) return out;
+
+    env->SetObjectArrayElement(out, 0, env->NewStringUTF(s->arch.c_str()));
+    env->SetObjectArrayElement(out, 1, env->NewStringUTF(s->tmpl_kind.c_str()));
+    return out;
+}
+
 JNIEXPORT jboolean JNICALL
 JNI_FN(nativeSupportsVision)(JNIEnv *, jobject, jlong handle) {
     auto * s = reinterpret_cast<pll_session *>(handle);
@@ -343,8 +450,8 @@ JNI_FN(nativeResetChat)(JNIEnv *, jobject, jlong handle) {
     if (s == nullptr) return;
     llama_memory_clear(llama_get_memory(s->lctx), true);
     s->messages.clear();
-    s->prev_len = 0;
-    s->n_past   = 0;
+    s->prev_render.clear();
+    s->n_past = 0;
 }
 
 JNIEXPORT void JNICALL
@@ -433,13 +540,14 @@ JNI_FN(nativeGenerate)(JNIEnv * env, jobject, jlong handle,
 
     // Everything appended from here on can be undone by nativeRollbackTurn.
     s->undo_messages = s->messages.size();
-    s->undo_prev_len = s->prev_len;
+    s->undo_render   = s->prev_render.size();
     s->undo_n_past   = s->n_past;
     s->undo_valid    = true;
 
-    // Gemma 4 has a real system role, so the prompt gets its own turn at the
-    // head of the conversation rather than being folded into the first user
-    // message the way Gemma 3 required.
+    // The system prompt goes in as its own message at the head of the
+    // conversation. Gemma 4 has a real system role; for other models the
+    // template decides where it ends up, including folding it into the first
+    // user turn the way Gemma 3 required.
     if (s->messages.empty() && !system_prompt.empty()) {
         s->messages.emplace_back("system", system_prompt);
     }
@@ -460,12 +568,25 @@ JNI_FN(nativeGenerate)(JNIEnv * env, jobject, jlong handle,
         s->messages.pop_back();
         return env->NewStringUTF("\x01" "chat template failed");
     }
-    if (s->prev_len > rendered.size()) {
-        s->messages.pop_back();
-        return env->NewStringUTF("\x01" "chat state desynchronised");
+    // Only the part of the prompt that is new gets tokenized; the rest is
+    // already in the KV cache. That holds exactly as long as each render extends
+    // the last one, which the Gemma renderer guarantees and a foreign template
+    // does not: several of llama.cpp's built-ins fold the system prompt into the
+    // *last* user message, so the whole transcript shifts every turn. Detect it
+    // by comparison rather than by trusting the template, and re-evaluate from
+    // scratch when it happens - slow, but correct, and it beats feeding the
+    // model a prompt spliced together from two different renderings.
+    if (rendered.compare(0, s->prev_render.size(), s->prev_render) != 0) {
+        LOGI("template rewrote history; re-evaluating %zu bytes", rendered.size());
+        llama_memory_clear(llama_get_memory(s->lctx), true);
+        s->n_past = 0;
+        s->prev_render.clear();
+        // The KV state the rollback would restore no longer exists.
+        s->undo_valid = false;
     }
-    const std::string delta = rendered.substr(s->prev_len);
-    const bool add_bos = (s->prev_len == 0);
+
+    const std::string delta = rendered.substr(s->prev_render.size());
+    const bool add_bos = s->prev_render.empty();
 
     // ---- evaluate the new prompt segment ------------------------------------
     // Timings are split so a slow turn can be attributed: media preprocessing
@@ -658,8 +779,9 @@ JNI_FN(nativeGenerate)(JNIEnv * env, jobject, jlong handle,
 
     s->messages.emplace_back("assistant", reply);
     std::string closed;
-    const int32_t plen = render_chat(s, /*add_assistant=*/false, closed);
-    s->prev_len = (plen < 0) ? s->prev_len : static_cast<size_t>(plen);
+    if (render_chat(s, /*add_assistant=*/false, closed) >= 0) {
+        s->prev_render = closed;
+    }
 
     return env->NewStringUTF(reply.c_str());
 }
@@ -684,7 +806,7 @@ JNI_FN(nativeRollbackTurn)(JNIEnv *, jobject, jlong handle) {
     if (mem != nullptr) llama_memory_seq_rm(mem, 0, s->undo_n_past, -1);
 
     s->messages.resize(s->undo_messages);
-    s->prev_len  = s->undo_prev_len;
+    s->prev_render.resize(s->undo_render);
     s->n_past    = s->undo_n_past;
     s->undo_valid = false;
 

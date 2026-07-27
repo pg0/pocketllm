@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-27 — 0.4.0
+
+- model — **any GGUF repo on Hugging Face can be added**: Settings → Model → Add from Hugging Face. Paste a repo id or URL, the tree endpoint is read, every single-file `.gguf` is listed with its real byte count, and the chosen one downloads through the existing resumable path. An `mmproj` in the same repo can be picked alongside for image and voice
+- jni — **the prompt renderer is no longer Gemma-only.** `pick_template` decides once at load: the hand-written Gemma 4 renderer when the template carries `<|turn>`, otherwise the model's own template through `llama_chat_apply_template`, otherwise ChatML. The middle case is only taken after a probe render succeeds - llama.cpp matches against a fixed list rather than parsing Jinja, and finding that out at load beats finding it out mid-conversation
+- ui — a ChatML fallback is stated in red on the settings screen. A wrong prompt format does not throw, the model just answers badly, and that reads as a bad model
+- jni — **incremental evaluation now verifies its own assumption.** Only the new suffix of the transcript is tokenized, which holds while each render extends the last one - true for Gemma, not for the built-in templates that fold the system prompt into the *last* user message. The session keeps the previous render as text, compares, and re-evaluates from scratch on a mismatch
+- model — split GGUFs and MTP drafters are filtered out of the listing rather than offered: one downloads gigabytes and fails to load with an error mentioning nothing about shards, the other is a speculative-decoding sidecar
+- model — **Hugging Face token** field for gated repos, stored on the device and sent to huggingface.co only. Download failures at 401/403 now say what is wrong instead of "HTTP 403"
+- ui — the model picker is a list rather than two chips, each row carrying size, on-disk state and a RAM warning. Weights are memory-mapped, so a model that is too large thrashes or gets the app killed mid-answer instead of failing cleanly
+- tests — 79 total: repo-id normalisation from URLs and deep links, tree parsing, shard and drafter filtering, custom-model storage round trips
+
 ## 2026-07-27 — 0.3.1
 
 - ui — **"Show context and speed" setting**: a line above the composer with `ctx 1240 / 4096 (30%)`, a thin bar, and the last turn's `tok/s`, token count, prompt time and media tokens. The bar turns red past 85%, because a full window ends the conversation and does it silently otherwise

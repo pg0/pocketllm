@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.redcoralstudios.pocketllm.llm.LlmEngine
 import com.redcoralstudios.pocketllm.media.ImagePrep
+import com.redcoralstudios.pocketllm.model.HuggingFace
 import com.redcoralstudios.pocketllm.model.ModelDownloader
 import com.redcoralstudios.pocketllm.model.ModelStore
 import com.redcoralstudios.pocketllm.settings.SettingsRepository
@@ -28,12 +29,16 @@ class PocketLlmApp : Application() {
     lateinit var downloader: ModelDownloader
         private set
 
+    lateinit var huggingFace: HuggingFace
+        private set
+
     override fun onCreate() {
         super.onCreate()
         modelStore = ModelStore(this)
         engine = LlmEngine(modelStore)
         settings = SettingsRepository(this)
         downloader = ModelDownloader(modelStore)
+        huggingFace = HuggingFace()
 
         // Attachments are only meaningful within a session.
         ImagePrep.clearCache(this)

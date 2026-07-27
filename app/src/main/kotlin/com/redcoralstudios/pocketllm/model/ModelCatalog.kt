@@ -34,6 +34,8 @@ data class ModelSpec(
     val projector: RemoteFile?,
     val recommendedContext: Int,
     val minRamGb: Int,
+    /** Added by the user from a Hugging Face repo, so it can also be removed. */
+    val isCustom: Boolean = false,
 ) {
     val totalBytes: Long get() = weights.sizeBytes + (projector?.sizeBytes ?: 0L)
 }
@@ -80,11 +82,17 @@ object ModelCatalog {
         minRamGb = 6,
     )
 
-    val all: List<ModelSpec> = listOf(GEMMA_4_E4B, GEMMA_4_E2B)
+    /**
+     * The models shipped with the app. Anything the user adds from a Hugging
+     * Face repo lives in [CustomModels] instead, so a bad entry can be deleted
+     * without the app losing its two known-good defaults.
+     */
+    val builtIn: List<ModelSpec> = listOf(GEMMA_4_E4B, GEMMA_4_E2B)
 
     val default: ModelSpec = GEMMA_4_E4B
 
-    fun byId(id: String?): ModelSpec? = all.firstOrNull { it.id == id }
+    fun byId(id: String?, custom: List<ModelSpec> = emptyList()): ModelSpec? =
+        (builtIn + custom).firstOrNull { it.id == id }
 
     /**
      * Picks a default for this device. E4B is the better model but wants ~5 GB

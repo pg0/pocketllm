@@ -34,7 +34,18 @@ sealed interface EngineState {
         val contextSize: Int,
         val vision: Boolean,
         val audio: Boolean,
-    ) : EngineState
+        /** GGUF `general.architecture`, e.g. `gemma4`, `qwen3`, `llama`. */
+        val architecture: String = "",
+        /** How prompts are being built. See [LlamaBridge.nativeModelInfo]. */
+        val template: String = "",
+    ) : EngineState {
+        /**
+         * True when the prompt format is a guess rather than the model's own.
+         * Worth surfacing: a wrong template does not fail, it just makes the
+         * model answer badly, which is easy to blame on the model.
+         */
+        val templateIsGuessed: Boolean get() = template == "chatml"
+    }
 
     data class Failed(val message: String) : EngineState
 }
@@ -170,13 +181,17 @@ class LlmEngine(private val store: ModelStore) {
             projectorLoaded = false
             appliedSystemPrompt = null
 
+            val info = LlamaBridge.nativeModelInfo(h)
             _state.value = EngineState.Ready(
                 spec = spec,
                 contextSize = LlamaBridge.nativeContextSize(h),
                 vision = false,
                 audio = false,
+                architecture = info.getOrElse(0) { "" },
+                template = info.getOrElse(1) { "" },
             )
-            Log.i(TAG, "loaded ${spec.id}")
+            Log.i(TAG, "loaded ${spec.id} arch=${info.getOrElse(0) { "?" }} " +
+                "template=${info.getOrElse(1) { "?" }}")
         }
     }
 
