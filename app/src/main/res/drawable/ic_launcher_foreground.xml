@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A chat bubble with a solid core: local model, local conversation. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,32h48a8,8 0 0 1 8,8v26a8,8 0 0 1 -8,8H58l-14,12v-12h-14a8,8 0 0 1 -8,-8V40a8,8 0 0 1 8,-8z" />
+
+    <path
+        android:fillColor="#1B2027"
+        android:pathData="M54,44m-9,0a9,9 0 1,0 18,0a9,9 0 1,0 -18,0" />
+
+    <path
+        android:fillColor="#1B2027"
+        android:pathData="M38,60h32v5h-32z" />
+</vector>

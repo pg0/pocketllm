@@ -1,0 +1,95 @@
+package com.redcoralstudios.pocketllm.model
+
+/**
+ * A downloadable file belonging to a model.
+ *
+ * [sizeBytes] comes from the Hugging Face API and is used to detect truncated
+ * downloads and to resume them.
+ */
+data class RemoteFile(
+    val repo: String,
+    val fileName: String,
+    val sizeBytes: Long,
+) {
+    /** Local name, namespaced by repo so two models cannot collide. */
+    val localName: String
+        get() = repo.substringAfterLast('/') + "__" + fileName.substringAfterLast('/')
+
+    val url: String
+        get() = "https://huggingface.co/$repo/resolve/main/$fileName"
+}
+
+/**
+ * A model the app knows how to fetch and run.
+ *
+ * @param projector the mmproj file carrying the vision + audio encoders. It is
+ *        a separate download because it is only needed once an attachment is
+ *        actually sent, so it can be deferred on tight storage.
+ */
+data class ModelSpec(
+    val id: String,
+    val displayName: String,
+    val summary: String,
+    val weights: RemoteFile,
+    val projector: RemoteFile?,
+    val recommendedContext: Int,
+    val minRamGb: Int,
+) {
+    val totalBytes: Long get() = weights.sizeBytes + (projector?.sizeBytes ?: 0L)
+}
+
+/**
+ * Sizes below are the real byte counts reported by the Hugging Face API, not
+ * estimates. Both repos are ungated, so no access token is required.
+ */
+object ModelCatalog {
+
+    val GEMMA_4_E4B = ModelSpec(
+        id = "gemma-4-e4b-qat-mobile",
+        displayName = "Gemma 4 E4B (mobile QAT)",
+        summary = "Stronger. Needs roughly 5 GB of free RAM with attachments enabled.",
+        weights = RemoteFile(
+            repo = "unsloth/gemma-4-E4B-it-qat-mobile-GGUF",
+            fileName = "gemma-4-E4B-it-qat-UD-Q2_K_XL.gguf",
+            sizeBytes = 3_219_532_192L,
+        ),
+        projector = RemoteFile(
+            repo = "unsloth/gemma-4-E4B-it-qat-mobile-GGUF",
+            fileName = "mmproj-F16.gguf",
+            sizeBytes = 990_372_672L,
+        ),
+        recommendedContext = 4096,
+        minRamGb = 8,
+    )
+
+    val GEMMA_4_E2B = ModelSpec(
+        id = "gemma-4-e2b-qat-mobile",
+        displayName = "Gemma 4 E2B (mobile QAT)",
+        summary = "Lighter and faster. The fallback when E4B will not fit.",
+        weights = RemoteFile(
+            repo = "unsloth/gemma-4-E2B-it-qat-mobile-GGUF",
+            fileName = "gemma-4-E2B-it-qat-UD-Q2_K_XL.gguf",
+            sizeBytes = 2_186_186_784L,
+        ),
+        projector = RemoteFile(
+            repo = "unsloth/gemma-4-E2B-it-qat-mobile-GGUF",
+            fileName = "mmproj-F16.gguf",
+            sizeBytes = 985_654_080L,
+        ),
+        recommendedContext = 4096,
+        minRamGb = 6,
+    )
+
+    val all: List<ModelSpec> = listOf(GEMMA_4_E4B, GEMMA_4_E2B)
+
+    val default: ModelSpec = GEMMA_4_E4B
+
+    fun byId(id: String?): ModelSpec? = all.firstOrNull { it.id == id }
+
+    /**
+     * Picks a default for this device. E4B is the better model but wants ~5 GB
+     * free with the projector resident; below that E2B is the honest choice.
+     */
+    fun recommendedFor(totalRamGb: Int): ModelSpec =
+        if (totalRamGb >= 8) GEMMA_4_E4B else GEMMA_4_E2B
+}

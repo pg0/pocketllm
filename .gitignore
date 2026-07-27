@@ -1,0 +1,31 @@
+# Secrets - never commit
+.env
+.env.*
+!.env.example
+keystore.properties
+*.jks
+*.keystore
+
+# Android / Gradle
+local.properties
+.gradle/
+build/
+app/build/
+captures/
+.cxx/
+*.apk
+*.aab
+
+# Model files must never enter the repo (gigabytes)
+*.gguf
+models/
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Claude
+.claude/settings.local.json
+CLAUDE.local.md
+docs/.generated.*
