@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-27 — 0.2.1
+
+- ui — tapping a thumbnail opens the attachment full screen, with pinch zoom, double tap for 2x and tap to close. It shows the file the app prepared rather than handing the original to another app, which is the point: what is on screen is exactly what the model was given, and a PDF page that rendered badly or a photo that came out sideways is invisible at 64 dp
+- ui — tapping a document chip shows the extracted text with its character count. When an answer misses something plainly in the file, this is what says whether the model failed or the extraction did. The X on the chip still removes it
+
 ## 2026-07-27 — 0.2.0
 
 - media — **documents attach from the + menu**: PDF, Word, Excel, CSV and any text or code file

@@ -80,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redcoralstudios.pocketllm.llm.EngineState
 import com.redcoralstudios.pocketllm.media.DocumentImport
+import com.redcoralstudios.pocketllm.media.PendingDocument
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,6 +101,23 @@ fun ChatScreen(vm: ChatViewModel) {
     // The composer text lives in the view model so dictation can write into it.
     val input by vm.input.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
+
+    // Tapping a thumbnail opens what the model was actually given: a badly
+    // rendered PDF page or a sideways photo is invisible at 64 dp.
+    var viewingImage by remember { mutableStateOf<String?>(null) }
+    var viewingDoc by remember { mutableStateOf<PendingDocument?>(null) }
+
+    viewingImage?.let { path ->
+        ImageViewer(path = path, onDismiss = { viewingImage = null })
+    }
+    viewingDoc?.let { doc ->
+        DocumentViewer(
+            name = doc.name,
+            text = doc.text,
+            truncated = doc.truncated,
+            onDismiss = { viewingDoc = null },
+        )
+    }
 
     val listState = rememberLazyListState()
     LaunchedEffect(messages.size, messages.lastOrNull()?.text) {
@@ -169,7 +187,9 @@ fun ChatScreen(vm: ChatViewModel) {
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(messages, key = { it.id }) { MessageBubble(it) }
+                items(messages, key = { it.id }) { message ->
+                    MessageBubble(message, onOpenImage = { viewingImage = it })
+                }
             }
 
             // "First 5 of 12 pages" and the like: what the model will actually
@@ -191,7 +211,10 @@ fun ChatScreen(vm: ChatViewModel) {
                 ) {
                     pendingDocs.forEach { doc ->
                         AssistChip(
-                            onClick = { vm.removeDocument(doc) },
+                            // Tap shows the extracted text, the X removes it.
+                            // Seeing what was extracted is the only way to tell
+                            // a model miss from an extraction miss.
+                            onClick = { viewingDoc = doc },
                             leadingIcon = {
                                 Icon(
                                     Icons.AutoMirrored.Filled.InsertDriveFile,
@@ -210,7 +233,9 @@ fun ChatScreen(vm: ChatViewModel) {
                                 Icon(
                                     Icons.Default.Close,
                                     contentDescription = "Remove",
-                                    Modifier.size(16.dp),
+                                    Modifier
+                                        .size(16.dp)
+                                        .clickable { vm.removeDocument(doc) },
                                 )
                             },
                         )
@@ -242,6 +267,7 @@ fun ChatScreen(vm: ChatViewModel) {
                             AttachmentThumbnail(
                                 path = attachment.path,
                                 onRemove = { vm.removeAttachment(attachment) },
+                                onOpen = { viewingImage = attachment.path },
                             )
                         }
                     }
@@ -372,9 +398,9 @@ private fun ErrorCard(message: String, onDismiss: () -> Unit) {
 
 /** Picked image plus a remove badge, so the pick is visibly the right photo. */
 @Composable
-private fun AttachmentThumbnail(path: String, onRemove: () -> Unit) {
+private fun AttachmentThumbnail(path: String, onRemove: () -> Unit, onOpen: () -> Unit) {
     Box {
-        LocalThumbnail(path, size = 64.dp)
+        LocalThumbnail(path, size = 64.dp, modifier = Modifier.clickable { onOpen() })
         Surface(
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
             shape = RoundedCornerShape(bottomStart = 8.dp),
@@ -392,7 +418,7 @@ private fun AttachmentThumbnail(path: String, onRemove: () -> Unit) {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(message: ChatMessage, onOpenImage: (String) -> Unit) {
     val isUser = message.role == Role.USER
     val bg = when {
         message.isError -> MaterialTheme.colorScheme.errorContainer
@@ -434,7 +460,13 @@ private fun MessageBubble(message: ChatMessage) {
                     val images = message.attachments.filterNot { it.isAudio }
                     if (images.isNotEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            images.forEach { LocalThumbnail(it.path, size = 96.dp) }
+                            images.forEach { image ->
+                                LocalThumbnail(
+                                    image.path,
+                                    size = 96.dp,
+                                    modifier = Modifier.clickable { onOpenImage(image.path) },
+                                )
+                            }
                         }
                         Spacer(Modifier.height(6.dp))
                     }
@@ -488,7 +520,11 @@ private fun MessageBubble(message: ChatMessage) {
 
                 if (message.image != null) {
                     Spacer(Modifier.height(6.dp))
-                    LocalImage(message.image.path, message.image.caption)
+                    LocalImage(
+                        message.image.path,
+                        message.image.caption,
+                        modifier = Modifier.clickable { onOpenImage(message.image.path) },
+                    )
                     if (message.image.caption.isNotBlank()) {
                         Text(
                             message.image.caption,

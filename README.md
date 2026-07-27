@@ -17,7 +17,8 @@ download, and after that only if you switch web access on.
 - **Auto-loads on launch.** The configured model begins loading from the view
   model's constructor. There is no confirmation step.
 - **Images in.** Attach a photo; the vision encoder feeds it to the model. The
-  pending attachment is shown as a thumbnail, not a label.
+  pending attachment is shown as a thumbnail, not a label, and tapping it opens
+  full screen - what you see there is exactly what the model was given.
 - **Dictation.** The mic transcribes into the text field, where you can read and
   fix it before sending. Not audio-to-model: a spoken sentence costs a few
   hundred audio tokens out of 4096 where its transcript costs a dozen, a
@@ -69,6 +70,10 @@ extraction: a scanned or photographed document has no text layer at all.
 Five pages maximum, roughly 250 tokens each, rendered at 1536 px because body
 copy at 1024 px stops being legible. The page count is shown before you send, so
 a long file is never quietly cut.
+
+Tap a page thumbnail to see the render full screen, or a document chip to read
+the extracted text. Both answer the same question: when the answer misses
+something that is plainly in the file, was that the model or the extraction?
 
 The old binary `.doc` / `.xls` / `.ppt` are refused by name, with the fix - they
 are OLE compound files and reading them needs a library that costs more than the
