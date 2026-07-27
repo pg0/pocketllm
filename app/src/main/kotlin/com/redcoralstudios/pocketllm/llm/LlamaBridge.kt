@@ -45,6 +45,14 @@ object LlamaBridge {
     /** Drops the KV cache and the conversation history. */
     external fun nativeResetChat(handle: Long)
 
+    /**
+     * Undoes the most recent [nativeGenerate], history and KV cache both.
+     *
+     * Used to retry a question with web context after the model answered that
+     * it does not know: leaving the refusal in the history biases the retry.
+     */
+    external fun nativeRollbackTurn(handle: Long): Boolean
+
     /** Thread-safe. Aborts prompt evaluation and token generation. */
     external fun nativeCancel(handle: Long)
 

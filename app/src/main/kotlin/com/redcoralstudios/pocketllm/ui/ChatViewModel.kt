@@ -8,8 +8,11 @@ import com.redcoralstudios.pocketllm.PocketLlmApp
 import com.redcoralstudios.pocketllm.llm.Dials
 import com.redcoralstudios.pocketllm.llm.EngineState
 import com.redcoralstudios.pocketllm.llm.GenChunk
-import com.redcoralstudios.pocketllm.media.AudioRecorder
+import com.redcoralstudios.pocketllm.media.Dictation
 import com.redcoralstudios.pocketllm.media.ImagePrep
+import com.redcoralstudios.pocketllm.media.MediaImport
+import com.redcoralstudios.pocketllm.media.SpeechToText
+import com.redcoralstudios.pocketllm.media.VideoPrep
 import com.redcoralstudios.pocketllm.model.DownloadProgress
 import com.redcoralstudios.pocketllm.model.ModelCatalog
 import com.redcoralstudios.pocketllm.model.ModelSpec
@@ -61,7 +64,7 @@ data class DownloadState(
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container = PocketLlmApp.from(app)
-    private val recorder = AudioRecorder()
+    private val speech = SpeechToText()
     private val augmenter = WebAugmenter()
 
     val engineState: StateFlow<EngineState> = container.engine.state
@@ -86,6 +89,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
 
     /**
+     * The composer's text. Owned here rather than by the screen so dictation
+     * can write into it and the user can then read and correct it before
+     * sending -- the whole point of transcribing instead of sending audio.
+     */
+    private val _input = MutableStateFlow("")
+    val input: StateFlow<String> = _input.asStateFlow()
+
+    /**
      * Web search for the next message. Stays on once switched on -- it used to
      * clear itself after every send, which reads as the app turning the setting
      * off behind your back.
@@ -105,7 +116,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _attachError = MutableStateFlow<String?>(null)
     val attachError: StateFlow<String?> = _attachError.asStateFlow()
 
+    /** "6 frames sampled from 12s of video", so the sampling is not hidden. */
+    private val _videoNote = MutableStateFlow<String?>(null)
+    val videoNote: StateFlow<String?> = _videoNote.asStateFlow()
+
     private var generation: Job? = null
+    private var dictation: Job? = null
     private var nextId = 1L
 
     init {
@@ -203,31 +219,101 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _attachError.value = null
     }
 
+    /** Attaches an audio file for the model's audio encoder to hear directly. */
+    fun attachAudio(uri: Uri) {
+        viewModelScope.launch {
+            _activity.value = "Preparing audio"
+            val result = MediaImport.importAudio(getApplication(), uri)
+            val file = result.getOrElse {
+                _activity.value = null
+                _attachError.value = it.message ?: "Could not read that audio file."
+                return@launch
+            }
+            _pending.value = _pending.value + Attachment(file.absolutePath, isAudio = true)
+            _activity.value = "Loading audio encoder"
+            val ok = ensureProjector()
+            _activity.value = null
+            if (!ok) _attachError.value = "The audio encoder could not be loaded."
+        }
+    }
+
+    /**
+     * Attaches a video as a short sequence of frames.
+     *
+     * There is no native video path - see [VideoPrep] - so this is genuinely
+     * "some stills from your video", and the note on the message says so rather
+     * than letting it look like the model watched the whole thing.
+     */
+    fun attachVideo(uri: Uri) {
+        viewModelScope.launch {
+            _activity.value = "Extracting frames"
+            val result = VideoPrep.extractFrames(getApplication(), uri)
+            val frames = result.getOrElse {
+                _activity.value = null
+                _attachError.value = it.message ?: "Could not read that video."
+                return@launch
+            }
+            _pending.value = _pending.value +
+                frames.files.map { Attachment(it.absolutePath, isAudio = false) }
+            _videoNote.value = frames.note
+            _activity.value = "Loading image encoder"
+            val ok = ensureProjector()
+            _activity.value = null
+            if (!ok) _attachError.value = "The image encoder could not be loaded."
+        }
+    }
+
     fun removeAttachment(attachment: Attachment) {
         _pending.value = _pending.value - attachment
+        if (_pending.value.isEmpty()) _videoNote.value = null
         File(attachment.path).delete()
     }
 
-    fun startRecording() {
+    fun setInput(text: String) {
+        _input.value = text
+    }
+
+    /**
+     * Microphone -> text field.
+     *
+     * Dictation rather than audio-to-model: a spoken sentence costs a few
+     * hundred audio tokens out of 4096 where its transcript costs a dozen, the
+     * user gets to see and fix what was heard, and retrieval has something to
+     * search with. Audio still reaches the model's encoder directly if an audio
+     * *file* is attached.
+     */
+    fun startDictation() {
         if (_isRecording.value) return
+        if (!speech.isAvailable(getApplication())) {
+            _attachError.value = "Speech recognition is not available on this device."
+            return
+        }
+
         _isRecording.value = true
-        viewModelScope.launch {
-            if (!ensureProjector()) {
+        // Anything already typed is kept; dictation appends to it.
+        val prefix = _input.value.let { if (it.isBlank()) "" else it.trimEnd() + " " }
+
+        dictation = viewModelScope.launch {
+            try {
+                speech.listen(getApplication()).collect { event ->
+                    when (event) {
+                        is Dictation.Partial -> _input.value = prefix + event.text
+                        is Dictation.Final -> if (event.text.isNotBlank()) {
+                            _input.value = prefix + event.text
+                        }
+                        is Dictation.Level -> _recordingLevel.value = event.rms
+                        is Dictation.Failed -> _attachError.value = event.reason
+                    }
+                }
+            } finally {
                 _isRecording.value = false
-                _attachError.value = "The voice encoder could not be loaded."
-                return@launch
-            }
-            val file = recorder.record(getApplication()) { level -> _recordingLevel.value = level }
-            _isRecording.value = false
-            _recordingLevel.value = 0f
-            if (file != null) {
-                _pending.value = _pending.value + Attachment(file.absolutePath, isAudio = true)
+                _recordingLevel.value = 0f
             }
         }
     }
 
-    fun stopRecording() {
-        recorder.stop()
+    fun stopDictation() {
+        speech.stop()
     }
 
     /** Loads the mmproj encoders on first attachment. */
@@ -236,13 +322,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------------- chat
 
-    fun send(text: String) {
+    fun send(text: String = _input.value) {
         val trimmed = text.trim()
         val attachments = _pending.value
         if (trimmed.isEmpty() && attachments.isEmpty()) return
         if (busy.value) return
 
         _pending.value = emptyList()
+        _input.value = ""
+        _videoNote.value = null
 
         val userMessage = ChatMessage(nextId++, Role.USER, trimmed, attachments)
         val replyId = nextId++
@@ -258,72 +346,80 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 // Retrieval happens before generation, so the model never has to
                 // decide mid-answer whether to reach for the network.
-                var promptText = trimmed
-                var sources = emptyList<String>()
-                var note: String? = null
+                val urls = WebTools.extractUrls(trimmed)
+                val timeSensitive = WebTools.looksTimeSensitive(trimmed)
+                // A question that turns on a date or on "latest" cannot be
+                // answered from weights at all, so it searches without waiting
+                // for the globe button.
+                val searchNow = wantsSearch || (s.webAccess && timeSensitive)
+                var retrieved: WebAugmenter.Augmented? = null
 
                 if (s.webAccess && trimmed.isNotEmpty()) {
-                    val urls = WebTools.extractUrls(trimmed)
-                    val needsWork = wantsSearch || urls.isNotEmpty()
-                    if (needsWork || s.wikipediaGrounding) {
-                        _activity.value = when {
-                            urls.isNotEmpty() -> "Reading ${hostOf(urls.first())}"
-                            wantsSearch -> "Searching the web"
-                            else -> "Checking Wikipedia"
-                        }
+                    if (searchNow || urls.isNotEmpty() || s.wikipediaGrounding) {
+                        retrieved = retrieve(
+                            replyId = replyId,
+                            question = trimmed,
+                            searchEnabled = searchNow,
+                            wikipedia = s.wikipediaGrounding,
+                            label = when {
+                                urls.isNotEmpty() -> "Reading ${hostOf(urls.first())}"
+                                searchNow -> "Searching the web"
+                                else -> "Checking Wikipedia"
+                            },
+                        )
+                    }
+                }
 
-                        val augmented = runCatching {
-                            augmenter.augment(
-                                userText = trimmed,
-                                searchEnabled = wantsSearch,
-                                wikipediaGrounding = s.wikipediaGrounding,
-                                fallbackLang = Locale.getDefault().language,
+                var reply = generateInto(
+                    replyId = replyId,
+                    promptText = retrieved?.prompt ?: trimmed,
+                    attachments = attachments,
+                    settings = s,
+                    builder = builder,
+                )
+
+                // Second pass: the model said it could not answer, the network
+                // is available, and no search has been run yet. Asking again
+                // with sources is exactly what a person would do here.
+                val alreadySearched = searchNow || urls.isNotEmpty()
+                if (s.webAccess && !alreadySearched && trimmed.isNotEmpty() &&
+                    WebTools.looksUnanswered(reply) && container.engine.rollbackTurn()
+                ) {
+                    builder.setLength(0)
+                    update(replyId) {
+                        it.copy(text = "", streaming = true, sources = emptyList(), note = null)
+                    }
+
+                    val second = retrieve(
+                        replyId = replyId,
+                        question = trimmed,
+                        searchEnabled = true,
+                        wikipedia = s.wikipediaGrounding,
+                        label = "Answer wasn't known - searching the web",
+                    )
+
+                    if (second != null && second.sources.isNotEmpty()) {
+                        reply = generateInto(
+                            replyId = replyId,
+                            promptText = second.prompt,
+                            attachments = attachments,
+                            settings = s,
+                            builder = builder,
+                        )
+                        update(replyId) { it.copy(note = "Searched the web to answer this.") }
+                    } else {
+                        // Nothing found: put the original answer back rather
+                        // than leaving an empty bubble.
+                        update(replyId) {
+                            it.copy(
+                                text = reply,
+                                streaming = false,
+                                note = "Searched the web, found nothing usable.",
                             )
-                        }.getOrNull()
-
-                        if (augmented != null) {
-                            promptText = augmented.prompt
-                            sources = augmented.sources
-                            note = augmented.failureNote
-                            fetchInlineImage(augmented)?.let { image ->
-                                update(replyId) { it.copy(image = image) }
-                            }
                         }
-                        update(replyId) { it.copy(sources = sources, note = note) }
                     }
                 }
 
-                _activity.value =
-                    if (attachments.any { it.isAudio }) "Listening to your recording"
-                    else if (attachments.isNotEmpty()) "Looking at the image"
-                    else "Thinking"
-
-                container.engine.generate(
-                    userText = promptText,
-                    mediaPaths = attachments.map { it.path },
-                    creativity = s.creativity,
-                    factuality = s.factuality,
-                    maxTokens = s.maxTokens,
-                    systemOverride = s.systemPrompt,
-                ).collect { chunk ->
-                    when (chunk) {
-                        is GenChunk.Token -> {
-                            // First token means the prompt is through; the status
-                            // line hands over to the text appearing in the bubble.
-                            if (builder.isEmpty()) _activity.value = null
-                            builder.append(chunk.text)
-                            update(replyId) { it.copy(text = builder.toString()) }
-                        }
-
-                        is GenChunk.Complete ->
-                            update(replyId) { it.copy(text = chunk.text, streaming = false) }
-
-                        is GenChunk.Error ->
-                            update(replyId) {
-                                it.copy(text = chunk.message, streaming = false, isError = true)
-                            }
-                    }
-                }
                 update(replyId) { it.copy(streaming = false) }
             } finally {
                 _activity.value = null
@@ -331,6 +427,78 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 update(replyId) { it.copy(streaming = false) }
             }
         }
+    }
+
+    /** Runs retrieval and records what it found on the pending reply. */
+    private suspend fun retrieve(
+        replyId: Long,
+        question: String,
+        searchEnabled: Boolean,
+        wikipedia: Boolean,
+        label: String,
+    ): WebAugmenter.Augmented? {
+        _activity.value = label
+        val augmented = runCatching {
+            augmenter.augment(
+                userText = question,
+                searchEnabled = searchEnabled,
+                wikipediaGrounding = wikipedia,
+                fallbackLang = Locale.getDefault().language,
+            )
+        }.getOrNull()
+
+        if (augmented != null) {
+            fetchInlineImage(augmented)?.let { image ->
+                update(replyId) { it.copy(image = image) }
+            }
+            update(replyId) {
+                it.copy(sources = augmented.sources, note = augmented.failureNote)
+            }
+        }
+        return augmented
+    }
+
+    /** Streams one generation into [replyId] and returns the finished text. */
+    private suspend fun generateInto(
+        replyId: Long,
+        promptText: String,
+        attachments: List<Attachment>,
+        settings: AppSettings,
+        builder: StringBuilder,
+    ): String {
+        _activity.value = when {
+            attachments.any { it.isAudio } -> "Listening to the audio"
+            attachments.isNotEmpty() -> "Looking at the images"
+            else -> "Thinking"
+        }
+
+        container.engine.generate(
+            userText = promptText,
+            mediaPaths = attachments.map { it.path },
+            creativity = settings.creativity,
+            factuality = settings.factuality,
+            maxTokens = settings.maxTokens,
+            systemOverride = settings.systemPrompt,
+        ).collect { chunk ->
+            when (chunk) {
+                is GenChunk.Token -> {
+                    // First token means the prompt is through; the status line
+                    // hands over to the text appearing in the bubble.
+                    if (builder.isEmpty()) _activity.value = null
+                    builder.append(chunk.text)
+                    update(replyId) { it.copy(text = builder.toString()) }
+                }
+
+                is GenChunk.Complete ->
+                    update(replyId) { it.copy(text = chunk.text, streaming = false) }
+
+                is GenChunk.Error ->
+                    update(replyId) {
+                        it.copy(text = chunk.message, streaming = false, isError = true)
+                    }
+            }
+        }
+        return builder.toString()
     }
 
     /** Downloads the article image so the bubble can show it. */

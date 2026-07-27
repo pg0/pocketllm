@@ -182,15 +182,26 @@ class WebAugmenter(val tools: WebTools = WebTools()) {
         const val MAX_TOTAL_CHARS = 4_000
         const val TOP_RESULT_CHARS = 2_500
 
+        /**
+         * Repeated in every retrieval block on purpose. The system prompt says
+         * the same thing, but "I am a language model and cannot provide
+         * real-time information" is a strong enough habit that it is worth
+         * restating right next to the evidence.
+         */
+        const val NO_REFUSAL_RULE =
+            "Do not say you are a language model, that you lack internet access, or " +
+                "that you cannot give real-time information: the text above came from " +
+                "the live internet just now."
+
         const val PAGE_INSTRUCTION =
             "The text above was fetched from the linked page just now. Use it as the " +
                 "primary source. If it does not contain the answer, say so rather than " +
-                "filling the gap from memory."
+                "filling the gap from memory. $NO_REFUSAL_RULE"
 
         const val SEARCH_INSTRUCTION =
             "The results above come from a live web search run just now. Prefer them over " +
                 "your own recollection, cite the sources you use by their URL, and say " +
-                "plainly if they do not answer the question."
+                "plainly if they do not answer the question. $NO_REFUSAL_RULE"
 
         /**
          * Sources are fetched from English Wikipedia first, so the answer has to
@@ -213,13 +224,14 @@ class WebAugmenter(val tools: WebTools = WebTools()) {
             "The encyclopedia article above was fetched just now and is your primary " +
                 "source. Prefer it over your own recollection for names, dates and " +
                 "numbers. If it does not cover the question, say so instead of filling " +
-                "the gap from memory. Cite it by URL when you use it. $LANGUAGE_RULE"
+                "the gap from memory. Cite it by URL when you use it. $NO_REFUSAL_RULE " +
+                "$LANGUAGE_RULE"
 
         const val WIKI_PLUS_SEARCH_INSTRUCTION =
             "All of the above was fetched just now. The encyclopedia article is the " +
                 "most reliable source: when it disagrees with the search results, follow " +
                 "the article and say that the sources conflict. Prefer all of it over " +
                 "your own recollection, cite what you use by URL, and say plainly if it " +
-                "does not answer the question. $LANGUAGE_RULE"
+                "does not answer the question. $NO_REFUSAL_RULE $LANGUAGE_RULE"
     }
 }

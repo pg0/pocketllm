@@ -1,5 +1,8 @@
 package com.redcoralstudios.pocketllm.llm
 
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -59,9 +62,50 @@ object Dials {
     }
 
     /**
-     * Gemma templates carry no system role, so this text is prepended to the
-     * first user turn. Changing either dial therefore requires a chat reset --
-     * see [LlmEngine.applyDials].
+     * Tells the model what day it is.
+     *
+     * Without this a local model has no clock, only a training cutoff, and
+     * silently treats "now" as whenever its data ended. Asked about an event in
+     * 2026 it will call it upcoming with complete confidence -- not a
+     * hallucination exactly, but wrong in a way no amount of fact-checking
+     * prompt can catch, because the model has no way to know it is wrong.
+     *
+     * Deliberately part of every system prompt, including a custom one: the
+     * date is a fact about the world, not a matter of style.
+     */
+    fun dateLine(today: LocalDate = LocalDate.now()): String {
+        val stamp = today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.ENGLISH))
+        return "Today's date is $stamp. Your training data ends well before this, " +
+            "so treat your own sense of \"current\" or \"upcoming\" as out of date. " +
+            "Anything dated before today has already happened, even if it is in the " +
+            "future as far as your training goes. If a question turns on recent " +
+            "events, say what you do and do not know rather than assuming nothing " +
+            "has happened since your training."
+    }
+
+    /**
+     * Stops the model refusing to read what the app already fetched for it.
+     *
+     * Left to itself, an instruction-tuned model answers anything time-shaped
+     * with "I am a large language model and cannot provide real-time updates" -
+     * boilerplate learned in training, and it fires even when a `<web_context>`
+     * block containing today's answer is sitting in the same prompt. The
+     * retrieval instructions live in the user turn, so they lose to a habit
+     * this strong; the correction has to be in the system prompt.
+     */
+    const val WEB_CONTEXT_RULE: String =
+        "This app can retrieve web pages, run searches and read Wikipedia, and it does " +
+            "so before you are asked. Any <web_context> block in a message was fetched " +
+            "from the live internet moments ago. Treat it as current fact and answer " +
+            "from it. Never reply that you are a language model, that you cannot access " +
+            "the internet, or that you cannot provide real-time information when such a " +
+            "block is present - the retrieval already happened. If a block is present " +
+            "but does not contain the answer, say precisely that instead."
+
+    /**
+     * Gemma 4 has a real system role, so this text becomes its own turn at the
+     * head of the conversation. When a dial moves mid-chat the prompt is
+     * restated inline rather than resetting the conversation.
      */
     fun systemPrompt(creativity: Int, factuality: Int): String {
         val f = factuality.coerceIn(MIN, MAX)
@@ -105,7 +149,7 @@ object Dials {
             """.trimIndent()
         }
 
-        return listOf(grounding, tone)
+        return listOf(dateLine(), WEB_CONTEXT_RULE, grounding, tone)
             .filter { it.isNotBlank() }
             .joinToString("\n\n")
     }

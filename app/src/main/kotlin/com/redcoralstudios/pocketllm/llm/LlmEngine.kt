@@ -189,7 +189,10 @@ class LlmEngine(private val store: ModelStore) {
         }
 
         val params = Dials.params(creativity, factuality, maxTokens)
+        // A custom prompt replaces the style guidance, never the date: what day
+        // it is is a fact about the world, not a preference.
         val system = systemOverride?.takeIf { it.isNotBlank() }
+            ?.let { "${Dials.dateLine()}\n\n${Dials.WEB_CONTEXT_RULE}\n\n$it" }
             ?: Dials.systemPrompt(creativity, factuality)
 
         // Native only injects the system prompt on the first turn. If the dials
@@ -243,6 +246,17 @@ class LlmEngine(private val store: ModelStore) {
     fun stop() {
         val h = handle
         if (h != 0L) LlamaBridge.nativeCancel(h)
+    }
+
+    /**
+     * Undoes the last exchange so the same question can be asked again with
+     * better context. Without it, a retry sits underneath the model's own
+     * "I don't know", which it then tends to agree with.
+     */
+    suspend fun rollbackTurn(): Boolean = lock.withLock {
+        val h = handle
+        if (h == 0L) return@withLock false
+        withContext(worker) { LlamaBridge.nativeRollbackTurn(h) }
     }
 
     suspend fun resetChat() = lock.withLock {

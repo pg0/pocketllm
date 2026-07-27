@@ -27,27 +27,28 @@ What is still worth doing:
 Honest note: with web access on, the app is no longer strictly offline. It is
 off by default, armed per message, and the fetched URLs are shown on the answer.
 
-## 1a. Voice input cannot be grounded (known gap)
+## 1a. Voice input cannot be grounded - RESOLVED 2026-07-27
 
-Confirmed on device 2026-07-27: a spoken question about Nikola Tesla came back
-with "an American inventor" and no sources attached.
+Was: a spoken question about Nikola Tesla came back with "an American inventor"
+and no sources, because voice went to the model as audio and the app never saw a
+transcript to search with.
 
-The cause is structural, not a bug. Voice goes into the model **as audio** via
-the mmproj encoder, which is why tone survives - but it also means the app never
-sees a transcript. Retrieval runs before generation and needs text, so a
-voice-only message skips Wikipedia and search entirely.
+Resolved by making the microphone **dictate into the text field** rather than
+attach audio. The transcript is text like any other message, so retrieval,
+Wikipedia and the fact-checking dial all apply, and it costs a dozen tokens
+instead of a few hundred. It is also simply better UX: a misheard question is
+now visible and correctable instead of looking like a stupid model.
 
-Options, in increasing cost:
+Audio-to-encoder was not thrown away - it is an explicit attachment now, for
+when the sound itself is the subject rather than a way of typing.
 
-- Require a typed hint alongside voice (weak, defeats the point).
-- Run Android's on-device `SpeechRecognizer` **in parallel**, purely to produce a
-  retrieval query, while the real audio still goes to the model. The transcript
-  never reaches the prompt, so nothing non-verbal is lost. This is the good one.
-- A two-pass approach where the model first transcribes its own audio, then the
-  app retrieves and re-asks. Doubles latency.
+What is still open here:
 
-Until this is fixed, the fact-checking dial and Wikipedia grounding only apply
-to typed messages. That should probably be surfaced in the UI.
+- **Language switching.** The recogniser is handed the device locale. A German
+  phone dictating English gets worse results than it needs to.
+- **API 29-30 fallback.** `createOnDeviceSpeechRecognizer` is API 31+; below
+  that the platform recogniser may route to the network, which quietly makes an
+  offline app online. Worth surfacing in the UI when it happens.
 
 ## 1b. Arbitrary Hugging Face models
 
@@ -146,27 +147,40 @@ path is wired up on the Android side.
 Conversations currently die with the process. Room or a JSON file, plus a chat
 list, plus export.
 
-## 8. Video input
-
-Explicitly out of scope for v1 and not selected in the original brief.
+## 8. Video input - partially shipped 2026-07-27
 
 llama.cpp's mtmd video helper shells out to ffmpeg, which does not exist on
-Android, so `MTMD_VIDEO` is off. Doing it properly means sampling frames with
-`MediaMetadataRetriever`, feeding them as a bitmap sequence, and transcribing
-the audio track separately. Gemma 4 caps video at 60 s at 1 fps.
+Android, so `MTMD_VIDEO` is off and there is no native video path at all.
+`VideoPrep` samples frames with `MediaMetadataRetriever` instead and hands them
+to the vision encoder as an ordered image sequence.
 
-## 8a. Replacing the audio path with Whisper
+Six frames, because each costs roughly 250 tokens of a 4096-token context that
+also has to hold the question and the answer. Gemma 4 nominally accepts a minute
+at 1 fps; sixty frames would be ~15,000 tokens, which is not available here. The
+menu and the composer both say "as 6 frames" rather than letting it look like
+the model watched the clip.
 
-Raised because voice felt slow. It was measured first, and the measurement said
+Still open:
+
+- **The soundtrack is dropped.** Extracting it and feeding it to the audio
+  encoder would double the cost of an already expensive attachment.
+- **Frame count should scale with context size.** At 16k a longer sample is
+  affordable; it is currently fixed.
+- **Scene-change sampling** would beat even spacing for anything but a static
+  shot.
+
+## 8a. Whisper - not needed, twice over
+
+Raised because voice felt slow. Measured first, and the measurement said
 otherwise: the app was slow *everywhere* because of the missing `-march` flag
 (section 5), text turns included. Whisper would have been slow too.
 
-Still worth revisiting once the CPU work is done, for a different reason: a
-transcript is what section 1a needs to ground voice input. But it is a real
-cost - `whisper.cpp` as a second submodule, another 150-570 MB model to
-download, and the loss of everything non-verbal that the audio encoder
-currently preserves. Measure the audio encode share of a voice turn from the
-per-turn timing log before committing to it.
+The second reason it was wanted - a transcript to ground voice input - is
+solved by the platform recogniser (section 1a) at zero download cost.
+
+That leaves no open problem for `whisper.cpp` to fix here. Revisit only if
+on-device recognition turns out to be materially worse than Whisper for the
+languages in use, and weigh it against a 150-570 MB second model.
 
 ## 9. Smaller things
 

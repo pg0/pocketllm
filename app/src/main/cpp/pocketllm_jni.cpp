@@ -41,6 +41,15 @@ struct pll_session {
 
     int32_t n_batch = 512;
 
+    // Snapshot taken before each turn is appended, so a turn can be undone.
+    // Used when an answer comes back as "I don't know" and the app wants to
+    // retry the same question with web context instead of leaving a wrong
+    // answer in the history for the model to stay consistent with.
+    size_t    undo_messages = 0;
+    size_t    undo_prev_len = 0;
+    llama_pos undo_n_past   = 0;
+    bool      undo_valid    = false;
+
     std::atomic<bool> cancel{false};
 };
 
@@ -380,6 +389,12 @@ JNI_FN(nativeGenerate)(JNIEnv * env, jobject, jlong handle,
         return env->NewStringUTF("\x01" "attachments need the projector; load mmproj first");
     }
 
+    // Everything appended from here on can be undone by nativeRollbackTurn.
+    s->undo_messages = s->messages.size();
+    s->undo_prev_len = s->prev_len;
+    s->undo_n_past   = s->n_past;
+    s->undo_valid    = true;
+
     // Gemma 4 has a real system role, so the prompt gets its own turn at the
     // head of the conversation rather than being folded into the first user
     // message the way Gemma 3 required.
@@ -596,6 +611,35 @@ JNI_FN(nativeGenerate)(JNIEnv * env, jobject, jlong handle,
     s->prev_len = (plen < 0) ? s->prev_len : static_cast<size_t>(plen);
 
     return env->NewStringUTF(reply.c_str());
+}
+
+/**
+ * Undoes the last turn: drops the messages it added and truncates the KV cache
+ * back to where it was.
+ *
+ * Needed to retry a question after the model has already answered "I don't
+ * know". Simply asking again would leave the refusal in the history, and a
+ * model that has just said it cannot know something tends to stay consistent
+ * with itself on the second pass.
+ */
+JNIEXPORT jboolean JNICALL
+JNI_FN(nativeRollbackTurn)(JNIEnv *, jobject, jlong handle) {
+    auto * s = reinterpret_cast<pll_session *>(handle);
+    if (s == nullptr || s->lctx == nullptr || !s->undo_valid) return JNI_FALSE;
+    if (s->messages.size() < s->undo_messages) return JNI_FALSE;
+
+    llama_memory_t mem = llama_get_memory(s->lctx);
+    // [undo_n_past, inf) -- everything this turn wrote.
+    if (mem != nullptr) llama_memory_seq_rm(mem, 0, s->undo_n_past, -1);
+
+    s->messages.resize(s->undo_messages);
+    s->prev_len  = s->undo_prev_len;
+    s->n_past    = s->undo_n_past;
+    s->undo_valid = false;
+
+    LOGI("rolled back to n_past=%d, %zu messages",
+         static_cast<int>(s->n_past), s->messages.size());
+    return JNI_TRUE;
 }
 
 } // extern "C"

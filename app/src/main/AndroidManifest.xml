@@ -5,10 +5,19 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Voice input goes to the model's audio encoder as audio. -->
+    <!-- The mic dictates into the text field; audio files can also be attached
+         to the model's audio encoder directly. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!-- Apps targeting API 30+ cannot see the speech recognition service
+         without declaring the intent they intend to resolve. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <application
         android:name=".PocketLlmApp"

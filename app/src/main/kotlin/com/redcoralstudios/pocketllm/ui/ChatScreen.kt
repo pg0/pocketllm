@@ -25,9 +25,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -36,6 +38,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,6 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redcoralstudios.pocketllm.llm.EngineState
+import com.redcoralstudios.pocketllm.media.VideoPrep
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,7 +80,9 @@ fun ChatScreen(vm: ChatViewModel) {
     val activity by vm.activity.collectAsStateWithLifecycle()
     val attachError by vm.attachError.collectAsStateWithLifecycle()
 
-    var input by remember { mutableStateOf("") }
+    // The composer text lives in the view model so dictation can write into it.
+    val input by vm.input.collectAsStateWithLifecycle()
+    val videoNote by vm.videoNote.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
@@ -87,9 +94,18 @@ fun ChatScreen(vm: ChatViewModel) {
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> uri?.let(vm::attachImage) }
 
+    val videoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> uri?.let(vm::attachVideo) }
+
+    // Audio is not a "visual media" type, so it needs the document picker.
+    val audioPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(vm::attachAudio) }
+
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted -> if (granted) vm.startRecording() }
+    ) { granted -> if (granted) vm.startDictation() }
 
     if (showSettings) {
         SettingsSheet(vm = vm, onDismiss = { showSettings = false })
@@ -138,6 +154,16 @@ fun ChatScreen(vm: ChatViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(messages, key = { it.id }) { MessageBubble(it) }
+            }
+
+            // Says what the model will actually receive from a video, rather
+            // than letting six stills pass for "it watched the clip".
+            videoNote?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                )
             }
 
             if (pending.isNotEmpty()) {
@@ -192,25 +218,28 @@ fun ChatScreen(vm: ChatViewModel) {
 
             InputRow(
                 input = input,
-                onInputChange = { input = it },
+                onInputChange = vm::setInput,
                 busy = busy,
                 recording = recording,
                 webAccess = settings.webAccess,
                 searchArmed = searchArmed,
                 onToggleSearch = vm::toggleSearchArmed,
                 enabled = engineState is EngineState.Ready,
-                onSend = {
-                    vm.send(input)
-                    input = ""
-                },
+                onSend = { vm.send() },
                 onStop = vm::stopGeneration,
                 onPickImage = {
                     imagePicker.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                     )
                 },
+                onPickVideo = {
+                    videoPicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
+                    )
+                },
+                onPickAudio = { audioPicker.launch(arrayOf("audio/*")) },
                 onMicDown = { micPermission.launch(Manifest.permission.RECORD_AUDIO) },
-                onMicUp = vm::stopRecording,
+                onMicUp = vm::stopDictation,
             )
         }
     }
@@ -418,9 +447,13 @@ private fun InputRow(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onPickImage: () -> Unit,
+    onPickVideo: () -> Unit,
+    onPickAudio: () -> Unit,
     onMicDown: () -> Unit,
     onMicUp: () -> Unit,
 ) {
+    var showAttachMenu by remember { mutableStateOf(false) }
+
     Row(
         Modifier
             .fillMaxWidth()
@@ -431,8 +464,38 @@ private fun InputRow(
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onPickImage, enabled = enabled && !busy) {
-            Icon(Icons.Default.Image, contentDescription = "Attach image")
+        Box {
+            IconButton(onClick = { showAttachMenu = true }, enabled = enabled && !busy) {
+                Icon(Icons.Default.Add, contentDescription = "Attach")
+            }
+            DropdownMenu(
+                expanded = showAttachMenu,
+                onDismissRequest = { showAttachMenu = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Image") },
+                    leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) },
+                    onClick = { showAttachMenu = false; onPickImage() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Audio file") },
+                    leadingIcon = { Icon(Icons.Default.GraphicEq, contentDescription = null) },
+                    onClick = { showAttachMenu = false; onPickAudio() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Video") },
+                    // Named for what actually happens: there is no video path
+                    // in llama.cpp on Android, so the model sees stills.
+                    trailingIcon = {
+                        Text(
+                            "as ${VideoPrep.DEFAULT_FRAMES} frames",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Default.Movie, contentDescription = null) },
+                    onClick = { showAttachMenu = false; onPickVideo() },
+                )
+            }
         }
 
         if (webAccess) {
@@ -447,13 +510,15 @@ private fun InputRow(
             }
         }
 
+        // Dictation, not audio-to-model: the text lands in the field where it
+        // can be read and corrected before it costs any context.
         IconButton(
             onClick = { if (recording) onMicUp() else onMicDown() },
             enabled = enabled && !busy,
         ) {
             Icon(
                 Icons.Default.Mic,
-                contentDescription = if (recording) "Stop recording" else "Record voice",
+                contentDescription = if (recording) "Stop dictation" else "Dictate",
                 tint = if (recording) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.onSurface,
             )
@@ -463,7 +528,7 @@ private fun InputRow(
             value = input,
             onValueChange = onInputChange,
             modifier = Modifier.weight(1f),
-            placeholder = { Text(if (recording) "Recording..." else "Message") },
+            placeholder = { Text(if (recording) "Listening..." else "Message") },
             enabled = enabled,
             maxLines = 5,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),

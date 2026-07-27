@@ -18,11 +18,14 @@ download, and after that only if you switch web access on.
   model's constructor. There is no confirmation step.
 - **Images in.** Attach a photo; the vision encoder feeds it to the model. The
   pending attachment is shown as a thumbnail, not a label.
-- **Voice in.** Tap the mic. The recording goes to the model *as audio*, not as
-  a transcript, so delivery and tone survive - Gemma 4's projector carries an
-  audio encoder alongside the vision one. Recording **stops itself** when you
-  stop talking, using an RMS threshold measured against the room's own noise
-  floor rather than a fixed level.
+- **Dictation.** The mic transcribes into the text field, where you can read and
+  fix it before sending. Not audio-to-model: a spoken sentence costs a few
+  hundred audio tokens out of 4096 where its transcript costs a dozen, a
+  misheard question is visible instead of looking like a stupid model, and
+  retrieval has something to search with.
+- **Audio and video in.** The `+` menu attaches an image, an audio file - which
+  *does* go to the model's audio encoder directly, for when the sound itself is
+  the subject - or a video, which is sampled into frames.
 - **Two dials**, creativity and fact-checking, described below, plus an
   editable system prompt for when the dials are not enough.
 - **Web access, off by default.** Turn it on and a link in your message gets
@@ -77,6 +80,12 @@ With it on:
 - Asking to *see* something ("show me a picture of X") pulls the article's lead
   image and displays it under the answer, and tells the model not to claim it
   cannot show pictures.
+- A question turning on a year or on "latest / aktuell / wer hat gewonnen"
+  searches **without waiting for the globe button**. Those cannot be answered
+  from weights at all.
+- If the answer still comes back as "I don't know", the turn is rolled back and
+  asked again with search results. The rollback matters: a retry stacked
+  underneath the model's own refusal tends to get agreed with.
 
 The Wikipedia gate is deliberately biased towards **not** looking things up. A
 needless lookup costs a round-trip on every message and drags an irrelevant
@@ -215,10 +224,19 @@ Notes worth knowing before changing anything:
   forces javac to run, which trips AGP 8.1.4's `JdkImageTransform` under the
   JDK 21 bundled with Android Studio. The version string is read from
   `PackageManager` instead.
-- **Voice input cannot be grounded.** Audio reaches the model directly, so the
-  app never sees a transcript, and retrieval needs text to search with.
-  Wikipedia and search therefore apply to typed messages only. This is a
-  consequence of the audio-native design, not a bug; the fix is in the roadmap.
+- **The model has no clock.** Without being told the date it treats "now" as
+  wherever its training data ended, and calls a 2026 event upcoming with
+  complete confidence. No fact-checking prompt catches this, because the model
+  has no way to know it is wrong. Every system prompt carries the date.
+- **Instruction-tuned models refuse retrieved context.** "I am a large language
+  model and cannot provide real-time updates" fires even with a `<web_context>`
+  block containing the answer sitting in the same prompt. The retrieval
+  instructions live in the user turn, which loses to a habit that strong, so the
+  correction has to be in the system prompt - and is restated next to the
+  evidence for good measure.
+- **There is no native video path.** `MTMD_VIDEO` is off because llama.cpp's
+  helper shells out to ffmpeg. Video is sampled into six frames, and the UI says
+  so rather than implying the model watched the clip.
 - **Only the new suffix is ever tokenized.** The full transcript is re-rendered
   through the chat template each turn, then diffed against what is already in
   the KV cache - the standard llama.cpp approach.

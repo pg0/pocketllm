@@ -126,4 +126,42 @@ class WebToolsTest {
         assertEquals("Nikola Tesla", WebTools.imageSubject("show me a picture of Nikola Tesla"))
         assertEquals("Nikola Tesla", WebTools.imageSubject("picture of Nikola Tesla"))
     }
+
+    // ------------------------------------------------------- time sensitivity
+
+    @Test
+    fun `a year or a now-word forces a lookup`() {
+        // The model has no clock: without a search it will call a 2026 event
+        // upcoming, because as far as its weights go it is.
+        assertTrue(WebTools.looksTimeSensitive("wer hat die WM2026 gewonnen?"))
+        assertTrue(WebTools.looksTimeSensitive("what is the latest news"))
+        assertTrue(WebTools.looksTimeSensitive("aktuelle Ergebnisse"))
+        assertTrue(WebTools.looksTimeSensitive("who won the world cup"))
+    }
+
+    @Test
+    fun `timeless questions do not force a lookup`() {
+        assertFalse(WebTools.looksTimeSensitive("explain how a diode works"))
+        assertFalse(WebTools.looksTimeSensitive("write me a haiku"))
+    }
+
+    // ------------------------------------------------------ non-answer detect
+
+    @Test
+    fun `recognises a refusal worth retrying with sources`() {
+        assertTrue(WebTools.looksUnanswered("I don't know who won that match."))
+        assertTrue(WebTools.looksUnanswered("That is a future event and has not taken place yet."))
+        assertTrue(
+            WebTools.looksUnanswered(
+                "As of my last update I have no information about this.",
+            ),
+        )
+        assertTrue(WebTools.looksUnanswered("Das hat noch nicht stattgefunden."))
+    }
+
+    @Test
+    fun `does not treat a real answer as a refusal`() {
+        assertFalse(WebTools.looksUnanswered("The 2026 World Cup was hosted by three countries."))
+        assertFalse(WebTools.looksUnanswered("A diode conducts current in one direction."))
+    }
 }

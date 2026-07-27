@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-27 — 0.1.3
+
+- llm — **the model now knows what day it is.** A local model has no clock, only a training cutoff, so it called a 2026 event upcoming with complete confidence. No fact-checking prompt can catch that, because the model has no way to know it is wrong. Every system prompt now carries the date, a custom one included
+- llm — FIX the model refusing its own retrieved context: "I am a large language model and can't provide real-time updates" fired even with a `<web_context>` block containing the answer in the same prompt. Countered in the system prompt and restated in every retrieval block
+- net — questions turning on a year or on "latest / aktuell / wer hat gewonnen" now search **without waiting for the globe button**: they cannot be answered from weights at all
+- net — retry-with-search: when the answer reads as "I don't know" and the network is available, the turn is rolled back and asked again with sources. Rolling back matters - a retry stacked under the model's own refusal just gets agreed with
+- jni — `nativeRollbackTurn`: undoes the last exchange, history and KV cache both, via a pre-turn snapshot and `llama_memory_seq_rm`
+- net — FIX Wikipedia missing run-together terms: "WM2026" returns zero hits, and the API's own spelling suggestion ("wm 2026") finds the article. Also fixed a regex that could read a title out of a `search: []` miss
+- media — **the microphone is now dictation, not audio-to-model.** A spoken sentence cost a few hundred audio tokens of a 4096-token context where its transcript costs a dozen, nothing was shown on screen so a misheard question looked like a stupid model, and an audio-only turn could not be grounded at all. Text lands in the composer to be read and corrected before sending
+- media — audio still reaches the model's encoder directly, now as an explicitly attached file
+- ui — the attach button is a **+ menu**: image, audio file, or video
+- media — video attaches as evenly spaced frames (`VideoPrep`). There is no native video path - llama.cpp's helper shells out to ffmpeg, which Android does not have. Six frames because each costs ~250 tokens; the menu and the composer both say so rather than implying the model watched the clip
+- media — removed `AudioRecorder`, replaced by the platform recogniser
+- tests — 42 total: time sensitivity, non-answer detection
+
 ## 2026-07-27 — 0.1.2
 
 - native — **5x faster**: `GGML_NATIVE=OFF` with no `GGML_CPU_ARM_ARCH` set makes ggml-cpu emit no `-march` at all, inheriting the NDK baseline `armv8-a` with no dot-product instruction. Now built for `armv8.2-a+dotprod+fp16`. Same prompt on a Galaxy S23 Ultra: 1.3 → 6.9 tok/s decode, 44 s → 12 s prefill

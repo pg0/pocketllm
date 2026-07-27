@@ -159,15 +159,36 @@ class WebTools {
         }
 
     private fun wikiSearchTitle(query: String, lang: String): String? {
+        val direct = wikiSearchOnce(query, lang)
+        if (direct.title != null) return direct.title
+
+        // Zero hits but a spelling suggestion: this is what a run-together term
+        // like "WM2026" does. The API's own suggestion ("wm 2026") finds the
+        // article that the raw string never would.
+        val suggestion = direct.suggestion?.takeIf { !it.equals(query, ignoreCase = true) }
+            ?: return null
+        Log.i(TAG, "wikipedia: retrying '$query' as '$suggestion'")
+        return wikiSearchOnce(suggestion, lang).title
+    }
+
+    private data class WikiSearch(val title: String?, val suggestion: String?)
+
+    private fun wikiSearchOnce(query: String, lang: String): WikiSearch {
         val url = "https://$lang.wikipedia.org/w/api.php?action=query&list=search" +
             "&srsearch=${encode(query)}&srlimit=1&format=json&origin=*"
-        val json = getString(url) ?: return null
+        val json = getString(url) ?: return WikiSearch(null, null)
+
+        val suggestion = Regex(""""suggestion"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+            .find(json)?.groupValues?.get(1)?.let(::unescapeJson)
+
         // Deliberately a targeted regex rather than a JSON parser: one field,
-        // and it keeps the app free of a serialization dependency.
-        return Regex(""""title"\s*:\s*"((?:[^"\\]|\\.)*)"""")
-            .find(json)?.groupValues?.get(1)
-            ?.replace("\\\"", "\"")
-            ?.replace("\\\\", "\\")
+        // and it keeps the app free of a serialization dependency. The search
+        // array is empty on a miss, so no "title" key means no result.
+        val title = Regex(""""search"\s*:\s*\[\s*\{.*?"title"\s*:\s*"((?:[^"\\]|\\.)*)"""",
+            RegexOption.DOT_MATCHES_ALL)
+            .find(json)?.groupValues?.get(1)?.let(::unescapeJson)
+
+        return WikiSearch(title, suggestion)
     }
 
     private fun wikiExtract(title: String, lang: String): String? {
@@ -425,6 +446,57 @@ class WebTools {
             // A multi-word proper name is the other reliable signal. A single
             // capitalised word is not: sentences start with one.
             return PROPER_NAME.containsMatchIn(t)
+        }
+
+        /**
+         * Signals that an answer depends on something the model cannot know
+         * from training data alone: a specific year, or a word meaning "now".
+         *
+         * A local model has no clock. Asked about 2026 it will place it in the
+         * future with total confidence, because as far as its weights are
+         * concerned it is. That failure is invisible to any fact-checking
+         * prompt, so it has to be caught here and answered with a lookup.
+         */
+        private val TIME_SENSITIVE = Regex(
+            """\b(19|20)\d{2}\b""" +
+                """|\b(current|currently|latest|newest|recent|recently|today|now|this\s+(year|month|week))\b""" +
+                """|\b(news|score|result|results|standings|winner|won|champion)\b""" +
+                """|\b(aktuell|aktuelle[rsn]?|neueste[rsn]?|heute|gerade|jetzt|dieses\s+Jahr)\b""" +
+                """|\b(nachrichten|ergebnis|ergebnisse|tabelle|sieger|gewonnen|meister)\b""",
+            RegexOption.IGNORE_CASE,
+        )
+
+        fun looksTimeSensitive(text: String): Boolean = TIME_SENSITIVE.containsMatchIn(text)
+
+        /**
+         * Phrases that mean "I could not answer that".
+         *
+         * Used to decide whether to spend a web search on a second attempt, so
+         * a false positive costs one lookup and a false negative costs a wrong
+         * answer. Tuned accordingly.
+         */
+        private val NO_ANSWER = Regex(
+            """\b(i (don't|do not|can't|cannot) (know|say|tell|confirm|provide|access|browse))\b""" +
+                """|\bi('m| am) not (sure|certain|aware)\b""" +
+                """|\b(no|not enough) (information|data|details) (about|on|available)\b""" +
+                """|\b(knowledge (cut-?off|base)|training data|last update|as of my)\b""" +
+                """|\b(has|have)(n't| not) (yet )?(happened|taken place|occurred)\b""" +
+                """|\b(future|upcoming) event\b""" +
+                """|\b(will|is going to) (take place|happen|occur|be held)\b""" +
+                """|\bhas not been (played|held|announced|decided)\b""" +
+                """|\bich (weiß|kann) (es )?nicht\b""" +
+                """|\bkeine (informationen|angaben|daten)\b""" +
+                """|\b(mein )?(wissensstand|trainingsdaten|kenntnisstand)\b""" +
+                """|\bnoch nicht (stattgefunden|entschieden|bekannt)\b""" +
+                """|\b(zukünftiges|kommendes) (ereignis|turnier)\b""" +
+                """|\b(findet|wird) .{0,20}(statt|stattfinden)\b""",
+            RegexOption.IGNORE_CASE,
+        )
+
+        /** True when the reply reads as a non-answer worth retrying with sources. */
+        fun looksUnanswered(reply: String): Boolean {
+            if (reply.isBlank()) return false
+            return NO_ANSWER.containsMatchIn(reply)
         }
 
         private val STOPWORDS = setOf(
