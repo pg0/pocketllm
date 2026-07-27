@@ -111,6 +111,12 @@ fun SettingsSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
 
+            MemorySection()
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
             Text("Behaviour", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
 

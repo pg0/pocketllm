@@ -231,6 +231,15 @@ It is stored on the device and sent to huggingface.co only.
 Each row says whether the model fits: weights are memory-mapped, so one that is
 too large does not fail cleanly, it thrashes or gets the app killed mid-answer.
 
+Under the list is a **live memory readout** - what the app holds, what the phone
+holds of its total, what is free - refreshing while the sheet is open. That row
+warning is an estimate made from a file size; this is the measurement standing
+next to it, and it is also the only place in the app that can show a phone which
+was already full before the model loaded. It turns red past 90% or when Android
+raises `lowMemory`. Note that the app figure counts the *resident* part of the
+GGUF and falls when other apps need the RAM, so a drop is not the model
+unloading.
+
 **The prompt format is the part that can go wrong.** Every model family wraps
 turns differently, and a wrong wrapper does not throw an error - the model just
 answers badly, which reads as a bad model. PocketLLM picks a renderer once, at
@@ -319,6 +328,7 @@ app/src/main/kotlin/com/redcoralstudios/pocketllm/
   ui/Markdown.kt            block + inline markdown renderer
   ui/RemoteImage.kt         disk-cached image loading, no image library
   ui/ModelPicker.kt         model list + the add-from-Hugging-Face dialog
+  ui/MemorySection.kt       live RAM readout, polled while settings are open
   ui/                       Compose chat + settings sheet
 ```
 

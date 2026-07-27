@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-27 — 0.4.1
+
+- ui — **memory readout in settings**, under the model list: what the app is using (with the native-heap and code split), what the phone is using of its total, and how much is free. Refreshes every two seconds while the sheet is open and stops when it closes
+- ui — the phone figure and its bar turn red past 90% or when Android raises `lowMemory`, which is the state that gets the app killed mid-answer
+- ui — the readout states that weights are memory-mapped: the app figure counts the resident part of the GGUF and falls when other apps need RAM, so a drop is not the model unloading. Measured on a Galaxy S23 Ultra with E4B resident: app 4.2 GB, phone 7.4 of 10.8 GB
+- tests — 92 total: size formatting across the GB/MB/kB boundaries, and the derived used/free figures including a zero total and an available-above-total reading
+
 ## 2026-07-27 — 0.4.0
 
 - model — **any GGUF repo on Hugging Face can be added**: Settings → Model → Add from Hugging Face. Paste a repo id or URL, the tree endpoint is read, every single-file `.gguf` is listed with its real byte count, and the chosen one downloads through the existing resumable path. An `mmproj` in the same repo can be picked alongside for image and voice
