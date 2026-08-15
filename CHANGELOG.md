@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-15 — 0.4.3
+
+- ui — **three suggested repos in the add dialog**, one tap to look up: `LiquidAI/LFM2.5-1.2B-Instruct-GGUF` (small, text only), `LiquidAI/LFM2.5-VL-1.6B-GGUF` (same size class, sees images) and `Ma7ee7/Qwen3.8_4B_Distilled_GGUF` (stronger, text only). The list hides once a listing is on screen, where the question has moved on to which file
+- model — each suggestion carries the note you would otherwise only learn after a 700 MB download: whether it can see images, and that the Qwen distil is a thinking model whose replies open with a `<think>` block. The LiquidAI entries point at the `-GGUF` repos, not the base ones - the base repos hold safetensors and would list zero files
+- build — **`assembleRelease` signs the APK** when `keystore.properties` is present, so a release build is installable rather than an `app-release-unsigned.apk` no device accepts. The keystore and its passwords live outside the repo and are gitignored; without them the build still succeeds and emits the unsigned APK as before
+- tests — 94 total: the suggested ids survive repo-id normalisation unchanged, and all three point at GGUF repos
+
 ## 2026-07-27 — 0.4.2
 
 - ui — **"Unload model from memory"** in settings. There was no way to give the RAM back short of killing the app, and closing the app does not reliably do it: Android keeps the process cached until something else needs the memory. The conversation goes with the model, because the KV cache is what it remembers

@@ -25,6 +25,12 @@ models/
 *.iml
 .DS_Store
 
+# Style variants from the rewrite-style skill: drafts, not content
+.style-preview/
+
+# gh writes a device id here when XDG_STATE_HOME is unset
+.local/
+
 # Claude
 .claude/settings.local.json
 CLAUDE.local.md

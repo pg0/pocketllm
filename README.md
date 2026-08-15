@@ -316,6 +316,36 @@ Install:
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
+### Release builds
+
+`assembleRelease` signs the APK when `keystore.properties` exists in the repo
+root. Copy `keystore.properties.example` and fill it in; both the properties
+file and the keystore are gitignored. `storeFile` needs forward slashes even on
+Windows, because a properties file reads `\U` in `C:\Users` as a unicode escape.
+
+```powershell
+.\gradlew.bat :app:assembleRelease
+```
+
+Without that file the build still succeeds and emits `app-release-unsigned.apk`,
+which no device will install.
+
+Making a key, once:
+
+```powershell
+keytool -genkeypair -keystore <path>\pocketllm-release.jks -alias pocketllm `
+        -keyalg RSA -keysize 4096 -validity 10000
+```
+
+Keep it outside the repo and back it up. Android identifies an app by its
+signing certificate, so a replacement key is a different app: it cannot update
+an installed copy, and on Play it cannot update the listing at all. There is no
+recovery path, only a fresh install with the user's data gone.
+
+A debug build and a release build are signed by different keys, so installing
+one over the other fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Uninstall
+first when switching.
+
 ## How it is put together
 
 ```

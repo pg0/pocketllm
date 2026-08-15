@@ -1,6 +1,24 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+/**
+ * Release signing credentials, read from `keystore.properties` in the repo root.
+ *
+ * That file and the keystore itself are gitignored and live outside the repo,
+ * because losing the key is unrecoverable: Android identifies an app by its
+ * signature, so a replacement key makes it a different app that cannot update
+ * the installed one. See README, "Release builds".
+ *
+ * Absent on a fresh clone, and that is not an error - the file is deliberately
+ * not distributed. The build stays configurable and produces an unsigned APK.
+ */
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
 }
 
 android {
@@ -18,8 +36,8 @@ android {
         targetSdk = 34
         // Versioning rule: a feature is a minor bump (+0.1.0), a fix or a small
         // convenience is a patch (+0.0.1).
-        versionCode = 18
-        versionName = "0.4.2"
+        versionCode = 19
+        versionName = "0.4.3"
 
         ndk {
             // Every phone that can hold a 3 GB model in RAM is arm64. Shipping
@@ -53,8 +71,28 @@ android {
         }
     }
 
+    signingConfigs {
+        // Registered only when the credentials are present. Creating it
+        // unconditionally would fail configuration on a clone with a null
+        // storeFile, which reads as a broken build rather than a missing key.
+        if (keystoreProperties.getProperty("storeFile") != null) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                // Signature schemes are left to AGP, which picks them from
+                // minSdk: at 29 that is v2 only, and v1 (JAR signing) is dead
+                // weight no device on this floor still reads.
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Null when keystore.properties is absent, which leaves the old
+            // behaviour: assembleRelease still runs and emits an unsigned APK.
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
