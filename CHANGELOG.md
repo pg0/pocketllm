@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-15 — 0.4.4
+
+- ui — **the add dialog now picks an image encoder for you** when the repo ships one, smallest first. The default was "None", and the encoder section sits below the scrolling weights list, so adding a vision model without ever seeing it was the easy path. The model then looked fine until an image was attached much later, and the app said the encoder could not be loaded. Confirmed on `LiquidAI/LFM2.5-VL-1.6B-GGUF`: the mmproj was never downloaded because it was never selected
+- llm — `ensureProjector` returns a `ProjectorLoad` instead of a boolean. One sentence covered three unrelated problems: a model added as text only, an encoder that was never fetched, and a file llama.cpp rejects. Only the third is the app's fault, and the first two have a fix the user can carry out - if the app says which one it is
+- ui — **About links the latest release**, pointing at `releases/latest` rather than a versioned asset URL, which would go stale on the next build
+
 ## 2026-08-15 — 0.4.3
 
 - ui — **three suggested repos in the add dialog**, one tap to look up: `LiquidAI/LFM2.5-1.2B-Instruct-GGUF` (small, text only), `LiquidAI/LFM2.5-VL-1.6B-GGUF` (same size class, sees images) and `Ma7ee7/Qwen3.8_4B_Distilled_GGUF` (stronger, text only). The list hides once a listing is on screen, where the question has moved on to which file

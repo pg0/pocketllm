@@ -23,6 +23,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -184,6 +185,18 @@ private fun AddModelDialog(vm: ChatViewModel, onDismiss: () -> Unit) {
 
     val listing = repo.listing
 
+    // Pick an encoder for the user when the repo ships one.
+    //
+    // The default used to be "None", and the encoder section sits below the
+    // scrolling weights list, so adding a vision model without ever seeing it
+    // was the easy path. The model then looked fine until an image was
+    // attached, hours later, and the app said the encoder could not be loaded.
+    // Smallest of the offered mmproj files: they differ by quant, and on a
+    // phone the cheapest one is the right default.
+    LaunchedEffect(listing) {
+        if (projector == null) projector = listing?.projectors?.firstOrNull()
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add a model") },
@@ -280,7 +293,8 @@ private fun AddModelDialog(vm: ChatViewModel, onDismiss: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         Text("Image / voice encoder", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "Optional. Without it the model is text only.",
+                            "The smallest one is picked for you. Choosing None makes " +
+                                "the model text only, and attachments will be refused.",
                             style = MaterialTheme.typography.labelSmall,
                         )
                         FileRow(null, projector == null) { projector = null }

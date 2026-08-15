@@ -59,6 +59,27 @@ sealed interface EngineState {
     data class Failed(val message: String) : EngineState
 }
 
+/**
+ * Why an attachment could not reach the model.
+ *
+ * Was a boolean, which put three unrelated problems behind one sentence: a
+ * model added without an encoder, an encoder that was never fetched, and a file
+ * llama.cpp refuses. Only the third is a fault in the app, and the first two
+ * have a fix the user can carry out - but only if the app names which one it is.
+ */
+enum class ProjectorLoad {
+    Ok,
+
+    /** The model has no mmproj recorded. It was added as text only. */
+    NoneConfigured,
+
+    /** The mmproj is on the spec but missing or truncated on disk. */
+    NotDownloaded,
+
+    /** llama.cpp read the file and rejected it. */
+    Failed,
+}
+
 sealed interface GenChunk {
     data class Token(val text: String) : GenChunk
     data class Complete(val text: String) : GenChunk
@@ -210,15 +231,15 @@ class LlmEngine(private val store: ModelStore) {
      * Deferred on purpose: the projector costs close to a gigabyte of RAM, and
      * a text-only conversation never needs it.
      */
-    suspend fun ensureProjector(useGpu: Boolean, imageMaxTokens: Int = -1): Boolean =
+    suspend fun ensureProjector(useGpu: Boolean, imageMaxTokens: Int = -1): ProjectorLoad =
         lock.withLock {
-        val spec = loadedSpec ?: return@withLock false
-        val projector = spec.projector ?: return@withLock false
-        if (handle == 0L) return@withLock false
+        val spec = loadedSpec ?: return@withLock ProjectorLoad.NoneConfigured
+        val projector = spec.projector ?: return@withLock ProjectorLoad.NoneConfigured
+        if (handle == 0L) return@withLock ProjectorLoad.Failed
         // The token budget is fixed when the encoder is initialised, so
         // changing it means loading the projector again.
-        if (projectorLoaded && imageMaxTokens == loadedImageTokens) return@withLock true
-        if (!store.isComplete(projector)) return@withLock false
+        if (projectorLoaded && imageMaxTokens == loadedImageTokens) return@withLock ProjectorLoad.Ok
+        if (!store.isComplete(projector)) return@withLock ProjectorLoad.NotDownloaded
 
         withContext(worker) {
             val ok = LlamaBridge.nativeLoadProjector(
@@ -235,9 +256,9 @@ class LlmEngine(private val store: ModelStore) {
                     )
                 }
             } else {
-                Log.e(TAG, "projector load failed")
+                Log.e(TAG, "projector load failed: ${store.fileFor(projector).absolutePath}")
             }
-            ok
+            if (ok) ProjectorLoad.Ok else ProjectorLoad.Failed
         }
     }
 

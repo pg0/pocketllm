@@ -1,5 +1,6 @@
 package com.redcoralstudios.pocketllm.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,11 +29,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redcoralstudios.pocketllm.llm.Dials
 import com.redcoralstudios.pocketllm.settings.ImageDetail
 import kotlin.math.roundToInt
+
+/** Always the newest build. The APK is attached to each GitHub release. */
+private const val RELEASES_URL = "https://github.com/pg0/pocketllm/releases/latest"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -203,6 +208,22 @@ fun SettingsSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             Text(
                 "PocketLLM ${vm.appVersion}",
+                style = MaterialTheme.typography.labelSmall,
+            )
+            // Points at releases/latest rather than a versioned asset URL: the
+            // APK file name carries the version, so a direct link would rot on
+            // the next release and this screen would keep offering the old one.
+            val uriHandler = LocalUriHandler.current
+            Text(
+                "Get the latest APK",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .clickable { runCatching { uriHandler.openUri(RELEASES_URL) } },
+            )
+            Text(
+                RELEASES_URL,
                 style = MaterialTheme.typography.labelSmall,
             )
         }

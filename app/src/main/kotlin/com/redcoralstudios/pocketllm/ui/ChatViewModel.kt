@@ -10,6 +10,7 @@ import com.redcoralstudios.pocketllm.PocketLlmApp
 import com.redcoralstudios.pocketllm.llm.Dials
 import com.redcoralstudios.pocketllm.llm.EngineState
 import com.redcoralstudios.pocketllm.llm.GenChunk
+import com.redcoralstudios.pocketllm.llm.ProjectorLoad
 import com.redcoralstudios.pocketllm.llm.TurnStats
 import com.redcoralstudios.pocketllm.media.Dictation
 import com.redcoralstudios.pocketllm.media.DocumentImport
@@ -313,9 +314,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             // on screen or the pick looks like it did nothing.
             _pending.value = _pending.value + Attachment(file.absolutePath, isAudio = false)
             _activity.value = "Loading image encoder"
-            val ok = ensureProjector()
+            val encoder = ensureProjector()
             _activity.value = null
-            if (!ok) _attachError.value = "The image encoder could not be loaded."
+            _attachError.value = projectorError(encoder, "image")
         }
     }
 
@@ -335,9 +336,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
             _pending.value = _pending.value + Attachment(file.absolutePath, isAudio = true)
             _activity.value = "Loading audio encoder"
-            val ok = ensureProjector()
+            val encoder = ensureProjector()
             _activity.value = null
-            if (!ok) _attachError.value = "The audio encoder could not be loaded."
+            _attachError.value = projectorError(encoder, "audio")
         }
     }
 
@@ -389,9 +390,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _attachNote.value = "${DocumentImport.displayName(getApplication(), uri).orEmpty()} " +
             pages.note
         _activity.value = "Loading image encoder"
-        val ok = ensureProjector()
+        val encoder = ensureProjector()
         _activity.value = null
-        if (!ok) _attachError.value = "The image encoder could not be loaded."
+        _attachError.value = projectorError(encoder, "image")
     }
 
     fun removeAttachment(attachment: Attachment) {
@@ -465,11 +466,33 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      * the detail setting reloads it - which is why the setting lives in the
      * sheet rather than next to the attach button.
      */
-    private suspend fun ensureProjector(): Boolean =
+    private suspend fun ensureProjector(): ProjectorLoad =
         container.engine.ensureProjector(
             useGpu = settings.value.projectorOnGpu,
             imageMaxTokens = settings.value.imageTokens,
         )
+
+    /**
+     * Turns a load result into something the user can act on.
+     *
+     * [what] names the encoder in the words of whatever was just attached, so a
+     * sound file does not produce a complaint about images.
+     */
+    private fun projectorError(result: ProjectorLoad, what: String): String? = when (result) {
+        ProjectorLoad.Ok -> null
+        ProjectorLoad.NoneConfigured ->
+            "This model was added without an $what encoder, so it is text only. " +
+                "Remove it in Settings → Model and add it again, picking an mmproj " +
+                "file this time. The weights are already on disk and will not " +
+                "download twice."
+        ProjectorLoad.NotDownloaded ->
+            "The $what encoder has not finished downloading. " +
+                "Settings → Model → Download / repair."
+        ProjectorLoad.Failed ->
+            "llama.cpp could not read this $what encoder. The mmproj may not " +
+                "match the weights, or the download is corrupt - Download / repair " +
+                "re-fetches it."
+    }
 
     // ------------------------------------------------------------------- chat
 
