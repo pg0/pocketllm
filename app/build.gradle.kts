@@ -36,8 +36,8 @@ android {
         targetSdk = 34
         // Versioning rule: a feature is a minor bump (+0.1.0), a fix or a small
         // convenience is a patch (+0.0.1).
-        versionCode = 20
-        versionName = "0.4.4"
+        versionCode = 21
+        versionName = "0.4.5"
 
         ndk {
             // Every phone that can hold a 3 GB model in RAM is arm64. Shipping

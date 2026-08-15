@@ -111,13 +111,13 @@ object ModelCatalog {
      */
     val suggestedRepos: List<SuggestedRepo> = listOf(
         SuggestedRepo(
-            repo = "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
-            note = "Small and fast, text only. Q4_K_M is about 0.7 GB.",
+            repo = "LiquidAI/LFM2.5-2.6B-GGUF",
+            note = "Text only. Q4_K_M is about 1.7 GB.",
         ),
         SuggestedRepo(
-            repo = "LiquidAI/LFM2.5-VL-1.6B-GGUF",
-            note = "Same size class but sees images - pick an mmproj file too, " +
-                "or attachments stay disabled.",
+            repo = "LiquidAI/LFM2.5-VL-3B-GGUF",
+            note = "Sees images. Q4_K_M is about 1.7 GB, plus 0.6 GB for the " +
+                "encoder that comes with it.",
         ),
         SuggestedRepo(
             repo = "Ma7ee7/Qwen3.8_4B_Distilled_GGUF",

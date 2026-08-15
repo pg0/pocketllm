@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-08-15 — 0.4.5
+
+- model — the two LiquidAI suggestions move up a size class: `LFM2.5-2.6B-GGUF` (text, Q4_K_M 1.67 GB) and `LFM2.5-VL-3B-GGUF` (sees images, Q4_K_M 1.67 GB plus a 0.58 GB encoder), replacing the 1.2B and 1.6B entries. Both still fit the phones this app targets, and both answer better
+
 ## 2026-08-15 — 0.4.4
 
 - ui — **the add dialog now picks an image encoder for you** when the repo ships one, smallest first. The default was "None", and the encoder section sits below the scrolling weights list, so adding a vision model without ever seeing it was the easy path. The model then looked fine until an image was attached much later, and the app said the encoder could not be loaded. Confirmed on `LiquidAI/LFM2.5-VL-1.6B-GGUF`: the mmproj was never downloaded because it was never selected
