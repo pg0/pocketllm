@@ -41,6 +41,17 @@ data class ModelSpec(
 }
 
 /**
+ * A repo offered as a starting point in the add dialog.
+ *
+ * [note] says the thing that only shows up after downloading: whether it can
+ * see images, and whether it thinks out loud.
+ */
+data class SuggestedRepo(
+    val repo: String,
+    val note: String,
+)
+
+/**
  * Sizes below are the real byte counts reported by the Hugging Face API, not
  * estimates. Both repos are ungated, so no access token is required.
  */
@@ -90,6 +101,30 @@ object ModelCatalog {
     val builtIn: List<ModelSpec> = listOf(GEMMA_4_E4B, GEMMA_4_E2B)
 
     val default: ModelSpec = GEMMA_4_E4B
+
+    /**
+     * One-tap repos for the add dialog, ordered lightest first.
+     *
+     * Every entry is a `-GGUF` repo on purpose. The base LiquidAI repos hold
+     * safetensors, so looking one up returns an empty file list and reads like
+     * the app is broken rather than like the wrong repo was pasted.
+     */
+    val suggestedRepos: List<SuggestedRepo> = listOf(
+        SuggestedRepo(
+            repo = "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+            note = "Small and fast, text only. Q4_K_M is about 0.7 GB.",
+        ),
+        SuggestedRepo(
+            repo = "LiquidAI/LFM2.5-VL-1.6B-GGUF",
+            note = "Same size class but sees images - pick an mmproj file too, " +
+                "or attachments stay disabled.",
+        ),
+        SuggestedRepo(
+            repo = "Ma7ee7/Qwen3.8_4B_Distilled_GGUF",
+            note = "Stronger, text only. A thinking model: every reply opens " +
+                "with a <think> block before the answer.",
+        ),
+    )
 
     fun byId(id: String?, custom: List<ModelSpec> = emptyList()): ModelSpec? =
         (builtIn + custom).firstOrNull { it.id == id }

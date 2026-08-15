@@ -1,5 +1,6 @@
 package com.redcoralstudios.pocketllm.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redcoralstudios.pocketllm.llm.EngineState
 import com.redcoralstudios.pocketllm.model.CustomModels
+import com.redcoralstudios.pocketllm.model.ModelCatalog
 import com.redcoralstudios.pocketllm.model.ModelSpec
 import com.redcoralstudios.pocketllm.model.RepoFile
 
@@ -199,6 +201,32 @@ private fun AddModelDialog(vm: ChatViewModel, onDismiss: () -> Unit) {
                     "A GGUF repo. Paste the id or the page URL.",
                     style = MaterialTheme.typography.labelSmall,
                 )
+
+                // Only while nothing has been looked up yet. Once a listing is
+                // on screen the choice has moved on to which file, and a list of
+                // other repos underneath it is just noise.
+                if (listing == null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Or start from one of these", style = MaterialTheme.typography.titleSmall)
+                    ModelCatalog.suggestedRepos.forEach { suggestion ->
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !repo.busy) {
+                                    input = suggestion.repo
+                                    vm.searchRepo(suggestion.repo)
+                                }
+                                .padding(vertical = 6.dp)
+                        ) {
+                            Text(
+                                suggestion.repo,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(suggestion.note, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
 
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(

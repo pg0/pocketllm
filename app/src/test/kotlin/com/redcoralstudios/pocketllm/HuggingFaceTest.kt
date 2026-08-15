@@ -1,5 +1,6 @@
 package com.redcoralstudios.pocketllm
 
+import com.redcoralstudios.pocketllm.model.ModelCatalog
 import com.redcoralstudios.pocketllm.model.normalizeRepoId
 import com.redcoralstudios.pocketllm.model.parseTree
 import org.junit.Assert.assertEquals
@@ -132,5 +133,26 @@ class HuggingFaceTest {
         )
         assertEquals("Q4_K_M/model.gguf", listing.weights.single().path)
         assertEquals("model.gguf", listing.weights.single().name)
+    }
+
+    // ------------------------------------------------------- suggested repos
+
+    /**
+     * A suggestion is a one-tap lookup, so a typo in one would fail on the
+     * device with "No repo called ...". The ids also carry `.` and `_`, which
+     * the segment pattern has to keep accepting.
+     */
+    @Test
+    fun `every suggested repo is already a normalised id`() {
+        ModelCatalog.suggestedRepos.forEach {
+            assertEquals(it.repo, normalizeRepoId(it.repo))
+        }
+    }
+
+    @Test
+    fun `suggested repos point at GGUF repos`() {
+        ModelCatalog.suggestedRepos.forEach {
+            assertTrue(it.repo, it.repo.endsWith("_GGUF") || it.repo.endsWith("-GGUF"))
+        }
     }
 }
