@@ -1,6 +1,7 @@
 package com.redcoralstudios.pocketllm.ui
 
 import android.Manifest
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -28,6 +29,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
@@ -36,6 +38,10 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -82,6 +88,8 @@ import com.redcoralstudios.pocketllm.llm.EngineState
 import com.redcoralstudios.pocketllm.settings.MemoryUsage
 import com.redcoralstudios.pocketllm.llm.TurnStats
 import com.redcoralstudios.pocketllm.media.DocumentImport
+import com.redcoralstudios.pocketllm.media.ImagePrep
+import com.redcoralstudios.pocketllm.model.CustomModels
 import com.redcoralstudios.pocketllm.media.PendingDocument
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -131,6 +139,14 @@ fun ChatScreen(vm: ChatViewModel) {
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> uri?.let(vm::attachImage) }
 
+    // The camera writes into a uri chosen here, so the target has to survive
+    // until the camera app comes back with a plain "did it work".
+    val context = LocalContext.current
+    var photoTarget by remember { mutableStateOf<Uri?>(null) }
+    val camera = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { taken -> if (taken) photoTarget?.let(vm::attachImage) }
+
     // Audio is not a "visual media" type, so it needs the document picker.
     val audioPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -151,7 +167,21 @@ fun ChatScreen(vm: ChatViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { StatusTitle(engineState) },
+                // The title doubles as the model switcher. Changing model was a
+                // three-tap trip into settings, and it is the one setting worth
+                // changing mid-conversation.
+                title = {
+                    var showModels by remember { mutableStateOf(false) }
+                    Box {
+                        StatusTitle(engineState, onClick = { showModels = true })
+                        ModelMenu(
+                            vm = vm,
+                            expanded = showModels,
+                            activeId = settings.modelId,
+                            onDismiss = { showModels = false },
+                        )
+                    }
+                },
                 actions = {
                     IconButton(onClick = vm::newChat, enabled = messages.isNotEmpty()) {
                         Icon(Icons.Default.Add, contentDescription = "New chat")
@@ -320,6 +350,17 @@ fun ChatScreen(vm: ChatViewModel) {
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                     )
                 },
+                onTakePhoto = {
+                    // A phone without a camera app throws rather than returning
+                    // a result, and that would take the whole screen down.
+                    runCatching {
+                        val target = ImagePrep.captureTarget(context)
+                        photoTarget = target
+                        camera.launch(target)
+                    }.onFailure {
+                        vm.reportAttachError("No camera app answered on this device.")
+                    }
+                },
                 onPickAudio = { audioPicker.launch(arrayOf("audio/*")) },
                 onPickDocument = { documentPicker.launch(DocumentImport.MIME_TYPES) },
                 onMicDown = { micPermission.launch(Manifest.permission.RECORD_AUDIO) },
@@ -330,7 +371,7 @@ fun ChatScreen(vm: ChatViewModel) {
 }
 
 @Composable
-private fun StatusTitle(state: EngineState) {
+private fun StatusTitle(state: EngineState, onClick: () -> Unit) {
     val (title, subtitle) = when (state) {
         is EngineState.Ready -> state.spec.displayName to "ready"
         is EngineState.Loading -> "Loading model" to "${(state.progress * 100).toInt()}%"
@@ -339,9 +380,96 @@ private fun StatusTitle(state: EngineState) {
         is EngineState.Unloaded -> "PocketLLM" to "model unloaded"
         EngineState.Idle -> "PocketLLM" to "starting"
     }
-    Column {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(subtitle, style = MaterialTheme.typography.labelSmall)
+    Row(
+        Modifier.clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f, fill = false)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(subtitle, style = MaterialTheme.typography.labelSmall)
+        }
+        // Without the caret the title reads as a label, and nobody taps a label.
+        Icon(Icons.Default.ArrowDropDown, contentDescription = "Switch model")
+    }
+}
+
+/**
+ * The models on disk, one tap away from the title.
+ *
+ * Downloaded only: this is the switcher, not the model manager. Anything that
+ * would start a several-gigabyte download belongs in settings, where the size
+ * and the RAM warning are on screen next to it.
+ */
+@Composable
+private fun ModelMenu(
+    vm: ChatViewModel,
+    expanded: Boolean,
+    activeId: String,
+    onDismiss: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        // Computed inside the menu: the check hits the filesystem once per
+        // model, and the title recomposes on every streamed token.
+        val downloaded = vm.availableModels().filter { vm.isDownloaded(it) }
+
+        if (downloaded.isEmpty()) {
+            DropdownMenuItem(
+                text = { Text("No model on disk yet - Settings has the downloads") },
+                onClick = onDismiss,
+            )
+        }
+
+        downloaded.forEach { spec ->
+            val active = spec.id == activeId
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text(
+                            spec.displayName,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            buildString {
+                                append(CustomModels.gbLabel(spec.totalBytes))
+                                if (spec.projector != null) append(" - sees images")
+                                if (!vm.fitsInRam(spec)) append(" - needs ~${spec.minRamGb} GB RAM")
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (vm.fitsInRam(spec)) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.error,
+                        )
+                    }
+                },
+                leadingIcon = {
+                    if (active) Icon(Icons.Default.Check, contentDescription = "Loaded")
+                    else Spacer(Modifier.size(24.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    // Reloading the model that is already up would cost twenty
+                    // seconds and the conversation, for nothing.
+                    if (!active) vm.selectModel(spec)
+                },
+            )
+        }
+
+        if (downloaded.size > 1) {
+            HorizontalDivider()
+            Text(
+                "Switching clears the conversation: what the model remembers of it " +
+                    "lives in the allocation that goes away with it.",
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier
+                    .widthIn(max = 260.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
     }
 }
 
@@ -747,12 +875,16 @@ private fun InputRow(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onPickImage: () -> Unit,
+    onTakePhoto: () -> Unit,
     onPickAudio: () -> Unit,
     onPickDocument: () -> Unit,
     onMicDown: () -> Unit,
     onMicUp: () -> Unit,
 ) {
     var showAttachMenu by remember { mutableStateOf(false) }
+    // Collapses again with the menu: reopening + should not resume halfway
+    // through a choice made a conversation ago.
+    var showImageSources by remember(showAttachMenu) { mutableStateOf(false) }
 
     Row(
         Modifier
@@ -781,11 +913,40 @@ private fun InputRow(
                 expanded = showAttachMenu,
                 onDismissRequest = { showAttachMenu = false },
             ) {
+                // "Image" is a heading, not an action: it opens the two ways of
+                // getting one in place. A nested popup would be the platform
+                // answer, but Material 3 has no submenu, and a second window
+                // over a menu on a phone lands badly.
                 DropdownMenuItem(
                     text = { Text("Image") },
                     leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) },
-                    onClick = { showAttachMenu = false; onPickImage() },
+                    trailingIcon = {
+                        Icon(
+                            if (showImageSources) Icons.Default.ExpandLess
+                            else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                        )
+                    },
+                    onClick = { showImageSources = !showImageSources },
                 )
+                if (showImageSources) {
+                    DropdownMenuItem(
+                        text = { Text("Camera") },
+                        modifier = Modifier.padding(start = 16.dp),
+                        leadingIcon = {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = null)
+                        },
+                        onClick = { showAttachMenu = false; onTakePhoto() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("From gallery") },
+                        modifier = Modifier.padding(start = 16.dp),
+                        leadingIcon = {
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+                        },
+                        onClick = { showAttachMenu = false; onPickImage() },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("Audio file") },
                     leadingIcon = { Icon(Icons.Default.GraphicEq, contentDescription = null) },

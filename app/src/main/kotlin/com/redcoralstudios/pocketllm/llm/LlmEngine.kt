@@ -70,6 +70,15 @@ sealed interface EngineState {
 enum class ProjectorLoad {
     Ok,
 
+    /**
+     * Loaded, but the GPU refused it and the CPU took over.
+     *
+     * Worth its own value rather than folding into [Ok]: the difference is
+     * seconds per attachment, and a user who is never told will read it as the
+     * app being slow rather than as this phone's driver.
+     */
+    OkOnCpu,
+
     /** The model has no mmproj recorded. It was added as text only. */
     NoneConfigured,
 
@@ -131,6 +140,9 @@ class LlmEngine(private val store: ModelStore) {
 
     /** The image token budget the resident projector was initialised with. */
     private var loadedImageTokens = -1
+
+    /** Whether the resident projector is the one the GPU turned down. */
+    private var fellBackToCpu = false
 
     /**
      * System prompt already baked into the current conversation. Gemma has no
@@ -209,6 +221,7 @@ class LlmEngine(private val store: ModelStore) {
             handle = h
             loadedSpec = spec
             projectorLoaded = false
+            fellBackToCpu = false
             appliedSystemPrompt = null
 
             val info = LlamaBridge.nativeModelInfo(h)
@@ -238,13 +251,26 @@ class LlmEngine(private val store: ModelStore) {
         if (handle == 0L) return@withLock ProjectorLoad.Failed
         // The token budget is fixed when the encoder is initialised, so
         // changing it means loading the projector again.
-        if (projectorLoaded && imageMaxTokens == loadedImageTokens) return@withLock ProjectorLoad.Ok
+        if (projectorLoaded && imageMaxTokens == loadedImageTokens) {
+            return@withLock if (fellBackToCpu) ProjectorLoad.OkOnCpu else ProjectorLoad.Ok
+        }
         if (!store.isComplete(projector)) return@withLock ProjectorLoad.NotDownloaded
 
         withContext(worker) {
-            val ok = LlamaBridge.nativeLoadProjector(
-                handle, store.fileFor(projector).absolutePath, useGpu, imageMaxTokens,
-            )
+            val path = store.fileFor(projector).absolutePath
+            var ok = LlamaBridge.nativeLoadProjector(handle, path, useGpu, imageMaxTokens)
+            fellBackToCpu = false
+
+            // The GPU path is the default, and mobile GPU drivers are where this
+            // fails. One retry on the CPU turns "this phone cannot handle
+            // attachments" into "attachments are slower here" - which the user
+            // is told, because unexplained slowness reads as a bad app.
+            if (!ok && useGpu) {
+                Log.w(TAG, "projector failed on GPU, retrying on CPU")
+                ok = LlamaBridge.nativeLoadProjector(handle, path, false, imageMaxTokens)
+                fellBackToCpu = ok
+            }
+
             if (ok) {
                 projectorLoaded = true
                 loadedImageTokens = imageMaxTokens
@@ -256,9 +282,13 @@ class LlmEngine(private val store: ModelStore) {
                     )
                 }
             } else {
-                Log.e(TAG, "projector load failed: ${store.fileFor(projector).absolutePath}")
+                Log.e(TAG, "projector load failed: $path")
             }
-            if (ok) ProjectorLoad.Ok else ProjectorLoad.Failed
+            when {
+                ok && fellBackToCpu -> ProjectorLoad.OkOnCpu
+                ok -> ProjectorLoad.Ok
+                else -> ProjectorLoad.Failed
+            }
         }
     }
 
@@ -440,6 +470,7 @@ class LlmEngine(private val store: ModelStore) {
         }
         loadedSpec = null
         projectorLoaded = false
+        fellBackToCpu = false
         appliedSystemPrompt = null
     }
 }

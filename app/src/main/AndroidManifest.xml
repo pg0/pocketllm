@@ -11,13 +11,24 @@
 
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <!-- Apps targeting API 30+ cannot see the speech recognition service
-         without declaring the intent they intend to resolve. -->
+         without declaring the intent they intend to resolve. Same for the
+         camera app the photo attachment hands off to. -->
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
     </queries>
+
+    <!-- No CAMERA permission on purpose: the photo is taken by the camera app,
+         not by this one, and declaring the permission would turn a hand-off
+         that needs no consent into one Android insists on asking about. -->
+
 
     <application
         android:name=".PocketLlmApp"
@@ -39,5 +50,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- A camera app cannot be handed a bare file path; it needs a content
+             uri it has been granted write access to for the one shot. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

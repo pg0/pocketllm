@@ -134,9 +134,10 @@ fun SettingsSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
 
             ToggleRow(
                 label = "Web access",
-                help = "Off means a conversation never touches the network. On, a link in " +
-                    "your message gets fetched and read, and the two sources in the + menu " +
-                    "become available. Your text is sent to those sites.",
+                help = "On by default. A link in your message gets fetched and read, the two " +
+                    "sources in the + menu become available, and a question about today or " +
+                    "the latest anything searches on its own. Your text is sent to those " +
+                    "sites. Off means a conversation never touches the network.",
                 checked = settings.webAccess,
                 onChange = vm::setWebAccess,
             )
@@ -162,8 +163,9 @@ fun SettingsSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
 
             ToggleRow(
                 label = "Image/voice encoder on GPU",
-                help = "Faster attachment handling where the driver supports it. " +
-                    "Turn off if attachments crash.",
+                help = "On by default: faster attachment handling where the driver " +
+                    "supports it, and a CPU retry where it does not. Turn off if " +
+                    "attachments crash the app.",
                 checked = settings.projectorOnGpu,
                 onChange = vm::setProjectorOnGpu,
             )

@@ -299,6 +299,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------- attachments
 
+    /** For failures the UI sees first, such as a device with no camera app. */
+    fun reportAttachError(message: String) {
+        _attachError.value = message
+    }
+
     fun attachImage(uri: Uri) {
         viewModelScope.launch {
             _activity.value = "Preparing image"
@@ -317,6 +322,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val encoder = ensureProjector()
             _activity.value = null
             _attachError.value = projectorError(encoder, "image")
+            noteCpuFallback(encoder)
         }
     }
 
@@ -339,6 +345,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val encoder = ensureProjector()
             _activity.value = null
             _attachError.value = projectorError(encoder, "audio")
+            noteCpuFallback(encoder)
         }
     }
 
@@ -478,8 +485,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      * [what] names the encoder in the words of whatever was just attached, so a
      * sound file does not produce a complaint about images.
      */
+    /**
+     * The GPU turned the encoder down and the CPU took over.
+     *
+     * Not an error - the attachment works - but it costs seconds per image, and
+     * silence here is the worst outcome: the app just feels slow on that phone,
+     * with nothing to point at and a setting nobody would think to look for.
+     */
+    private fun noteCpuFallback(result: ProjectorLoad) {
+        if (result != ProjectorLoad.OkOnCpu) return
+        _attachNote.value = "This phone's GPU refused the encoder, so it is running on the " +
+            "CPU: attachments take longer here. Settings has the switch, if turning it " +
+            "off and back on ever helps after a system update."
+    }
+
     private fun projectorError(result: ProjectorLoad, what: String): String? = when (result) {
-        ProjectorLoad.Ok -> null
+        ProjectorLoad.Ok, ProjectorLoad.OkOnCpu -> null
         ProjectorLoad.NoneConfigured ->
             "This model was added without an $what encoder, so it is text only. " +
                 "Remove it in Settings → Model and add it again, picking an mmproj " +

@@ -65,11 +65,18 @@ data class AppSettings(
     val maxTokens: Int,
     /** Load the model as soon as the app opens, without asking. */
     val autoLoad: Boolean,
-    /** Offload the vision/audio encoder to the GPU. Off by default: driver support varies. */
+    /**
+     * Offload the vision/audio encoder to the GPU. On by default: it is several
+     * times faster where the driver holds up, and where it does not the load is
+     * retried on the CPU rather than failing - see `LlmEngine.ensureProjector`.
+     */
     val projectorOnGpu: Boolean,
     /**
      * Master switch for the only feature that leaves the device during a chat.
-     * Off by default: with it off, a conversation touches the network never.
+     * On by default. Note what this costs: a question about today or about the
+     * latest anything now goes to DuckDuckGo on its own, without the toggle
+     * being armed, and so does a retry after the model says it does not know.
+     * Turning it off puts the app back to touching the network never.
      */
     val webAccess: Boolean,
     /**
@@ -110,8 +117,8 @@ data class AppSettings(
             contextSize = 4096,
             maxTokens = 1024,
             autoLoad = true,
-            projectorOnGpu = false,
-            webAccess = false,
+            projectorOnGpu = true,
+            webAccess = true,
             // Off by default and toggled from the + menu next to web search:
             // a lookup that happens on its own is one nobody asked for, and it
             // spends context on an article that may have nothing to do with

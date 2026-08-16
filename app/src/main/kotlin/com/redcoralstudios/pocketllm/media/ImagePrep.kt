@@ -7,6 +7,7 @@ import android.media.ExifInterface
 import android.graphics.Matrix
 import android.net.Uri
 import android.util.Log
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -71,6 +72,17 @@ object ImagePrep {
 
     fun cacheDir(context: Context): File =
         File(context.cacheDir, "attachments").also { if (!it.exists()) it.mkdirs() }
+
+    /**
+     * A content uri the camera app can write one full-size photo into.
+     *
+     * It lands in the same cache as everything else attached, so [clearCache]
+     * takes the original away with the downscaled copy [prepare] makes of it.
+     */
+    fun captureTarget(context: Context): Uri {
+        val file = File(cacheDir(context), "cam_${System.currentTimeMillis()}.jpg")
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }
 
     /** Drops attachments from previous sessions. */
     fun clearCache(context: Context) {

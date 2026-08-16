@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-16 — 0.4.6
+
+- ui — **"Image" in the + menu now opens two ways of getting one: "Camera" and "From gallery".** Asking the model about something in front of you meant taking the photo in another app first and coming back for it. The two sit indented under the heading rather than in a nested popup: Material 3 has no submenu, and a second window over a menu on a phone lands badly
+- media — `ImagePrep.captureTarget` hands the camera app a FileProvider uri into the attachment cache, so the shot is cleared with everything else on a new chat. The photo comes back full size and goes through the same downscale path as a picked one
+- ui — **the model name in the top bar is now the model switcher**: tap it and the models on disk are listed, with a check against the loaded one. Only downloaded ones, because anything that starts a several-gigabyte download belongs in settings next to the size and the RAM warning. The menu states that switching clears the conversation, which it always did
+- settings — **web access defaults to on.** A question about today or about the latest anything now searches without the toggle being armed, and the app retries with sources when the model says it does not know. Off still means a conversation never touches the network
+- settings — **the image/voice encoder defaults to the GPU**, and a failed GPU load is now retried on the CPU instead of reporting that the encoder cannot be loaded. Mobile GPU drivers are where this fails, and that turned a slow phone into a phone that could not take attachments at all
+- ui — **the CPU fallback says so**, above the composer, the first time an attachment goes through it. A silent fallback is the worse failure of the two: the app is simply slow on that device, with nothing to point at and a setting nobody would think to look for. `ProjectorLoad.OkOnCpu` carries it out of the engine
+- app — no `CAMERA` permission is declared, on purpose: the photo is taken by the camera app, and declaring the permission would add a consent dialog Android otherwise does not ask for. A device with no camera app says so instead of crashing
+
 ## 2026-08-15 — 0.4.5
 
 - model — the two LiquidAI suggestions move up a size class: `LFM2.5-2.6B-GGUF` (text, Q4_K_M 1.67 GB) and `LFM2.5-VL-3B-GGUF` (sees images, Q4_K_M 1.67 GB plus a 0.58 GB encoder), replacing the 1.2B and 1.6B entries. Both still fit the phones this app targets, and both answer better
